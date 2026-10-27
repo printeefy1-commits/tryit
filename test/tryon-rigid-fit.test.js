@@ -54,6 +54,40 @@ test('invalid pose is rejected rather than producing non-finite transforms',()=>
  const o=observation(new THREE.Euler());assert.equal(estimateRigidFit(o.face,o.aspect,{data:[NaN]},canonical),null);
 });
 
+test('lateral fit corrects a biased matrix using the observed facial projection',()=>{
+ for(const direction of [-1,1]){
+  const o=observation(new THREE.Euler(.08,direction*.96,-.06));
+  const biased=new THREE.Quaternion().setFromEuler(new THREE.Euler(.08,direction*.72,-.06));
+  o.matrix.data=new THREE.Matrix4().makeRotationFromQuaternion(biased).toArray();
+  const fit=estimateRigidFit(o.face,o.aspect,o.matrix,canonical);
+  assert.ok(fit.quaternion.angleTo(o.q)<.055,'rendered yaw should follow observed geometry, not inherit the full matrix bias');
+  const fittedUp=new THREE.Vector3(0,1,0).applyQuaternion(fit.quaternion);
+  const originalUp=new THREE.Vector3(0,1,0).applyQuaternion(biased);
+  assert.ok(fittedUp.distanceTo(originalUp)<1e-6,'yaw refinement preserves the head up vector');
+ }
+});
+
+test('lateral bridge stays attached when individual facial proportions differ from the template',()=>{
+ for(const direction of [-1,1]){
+  const o=observation(new THREE.Euler(0,direction*.96,0));
+  // A more projecting nasal root than the average template. Contours remain
+  // unchanged: a whole-face least-squares translation must not drag the bridge.
+  for(const i of [6,168,197])o.face[i].x+=direction*.018;
+  const fit=estimateRigidFit(o.face,o.aspect,o.matrix,canonical);
+  const root=new THREE.Vector3(...canonical[168]).applyQuaternion(fit.quaternion).multiplyScalar(fit.metricScale).add(fit.translation);
+  const observedX=(o.face[168].x-.5)*2*o.aspect;
+  assert.ok(Math.abs(root.x-observedX)<1e-6,'nasal-root attachment must survive a lateral turn');
+ }
+});
+
+test('yaw refinement uses current observations before a single pose smoothing step',()=>{
+ const current=observation(new THREE.Euler(0,.96,0));
+ const delayed=observation(new THREE.Euler(0,.72,0));
+ const expected=delayed.q.clone().slerp(current.q,.5);
+ const fit=estimateRigidFit(delayed.face,current.aspect,current.matrix,canonical,delayed.q,.5,1,0,current.face);
+ assert.ok(fit.quaternion.angleTo(expected)<1e-6,'filtered landmarks must not apply a second delay to yaw');
+});
+
 test('near-side temple clearance does not change eye or nose depth',()=>{
  const o=observation(new THREE.Euler(0,1.3,0));const fit=estimateRigidFit(o.face,o.aspect,o.matrix,canonical);
  assert.ok(fit.occlusionDepths[127]<fit.rotated[127].z,'near-side depth proxy leaves clearance for the visible arm');

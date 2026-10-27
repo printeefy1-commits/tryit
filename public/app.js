@@ -210,7 +210,7 @@ function tick() {
         const aspect = canvas.width / canvas.height;
         const alpha=1-Math.exp(-dt/0.055);
         const matrix=result.facialTransformationMatrixes?.[0];
-        fit=canonicalFace&&matrix?estimateRigidFit(filteredFace,aspect,matrix,canonicalFace,poseQuaternion,alpha,selected.scale,selected.offset):null;
+        fit=canonicalFace&&matrix?estimateRigidFit(filteredFace,aspect,matrix,canonicalFace,poseQuaternion,alpha,selected.scale,selected.offset,face):null;
         if(fit)poseQuaternion=fit.quaternion.clone();
       }
       const tracking=poseContinuity.update(fit,now);

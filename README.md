@@ -87,4 +87,4 @@ Si la caméra s'affiche sans lunettes, voir [les phases de chargement, les déla
 
 Pour les défauts de taille/décalage en tournant la tête ou les branches visibles au-dessus du front : [correction de la pose rigide et du volume crânien](docs/rigid-head-pose.md). La validation des mouvements réels du propriétaire reste nécessaire.
 
-Le contrôle `node scripts/occlusion-smoke.mjs` rend le vrai GLB sous dix positions et vérifie le pont et les branches par couverture de pixels. Les marges de profondeur et le maintien limité à 220 ms en cas de perte de suivi sont décrits dans le même document.
+Le contrôle `node scripts/occlusion-smoke.mjs` rend le vrai GLB sous douze positions et vérifie le pont et les branches par couverture de pixels. Les marges de profondeur, le maintien limité à 220 ms en cas de perte de suivi, l'ajustement latéral de l'angle et l'attache au nez sont décrits dans le même document.

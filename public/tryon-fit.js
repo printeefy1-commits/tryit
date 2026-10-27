@@ -66,31 +66,92 @@ export function updateFaceOccluder(mesh, face, aspect) {
 // screen scale/translation over distributed facial anchors, not the far iris,
 // whose predicted position can collapse when it is hidden in a profile view.
 const POSE_ANCHORS=[4,6,10,33,54,67,70,93,127,132,133,152,168,172,197,234,251,263,284,297,300,323,356,361,362,397,454];
-export function estimateRigidFit(face,aspect,matrix,canonical,previousQuaternion=null,alpha=1,scale=1,offset=0) {
-  if(!matrix?.data||matrix.data.length!==16||!matrix.data.every(Number.isFinite))return null;
-  const rotation=new THREE.Matrix4().extractRotation(new THREE.Matrix4().fromArray(matrix.data));
-  const quaternion=new THREE.Quaternion().setFromRotationMatrix(rotation).normalize();
-  if(previousQuaternion)quaternion.copy(previousQuaternion.clone().slerp(quaternion,alpha));
-  const rotated=canonical.map(v=>new THREE.Vector3(...v).applyQuaternion(quaternion));
-  const centerModel=new THREE.Vector2(),centerObserved=new THREE.Vector2();
-  let total=0;
-  const samples=POSE_ANCHORS.map(i=>{
-    const observed=landmarkPoint(face[i],aspect),predicted=rotated[i];
-    const weight=[33,133,263,362,168].includes(i)?3:1;
-    centerModel.addScaledVector(new THREE.Vector2(predicted.x,predicted.y),weight);
-    centerObserved.addScaledVector(new THREE.Vector2(observed.x,observed.y),weight);total+=weight;
-    return {observed,predicted,weight};
+const YAW_ANCHORS=[4,6,33,133,168,197,263,362,70,107,336,300];
+const HEAD_UP=new THREE.Vector3(0,1,0);
+
+function projectionSamples(face,aspect,canonical,indices) {
+  return indices.map(i=>{
+    const observed=landmarkPoint(face[i],aspect);
+    return {point:canonical[i],x:observed.x,y:observed.y,weight:[33,133,168,263,362].includes(i)?3:1};
   });
-  centerModel.multiplyScalar(1/total);centerObserved.multiplyScalar(1/total);
-  let numerator=0,denominator=0;
-  for(const {observed,predicted,weight} of samples){
-    const x=predicted.x-centerModel.x,y=predicted.y-centerModel.y;
-    numerator+=weight*(x*(observed.x-centerObserved.x)+y*(observed.y-centerObserved.y));
-    denominator+=weight*(x*x+y*y);
+}
+
+// Fit image scale/translation for a candidate rotation. This compares measured
+// 2D features without relying on hidden irises or normalized landmark depth.
+function screenProjection(samples,quaternion) {
+  const e=new THREE.Matrix4().makeRotationFromQuaternion(quaternion).elements;
+  let total=0,mx=0,my=0,ox=0,oy=0;
+  const projected=samples.map(sample=>{
+    const [x,y,z]=sample.point;
+    const px=e[0]*x+e[4]*y+e[8]*z,py=e[1]*x+e[5]*y+e[9]*z,w=sample.weight;
+    total+=w;mx+=w*px;my+=w*py;ox+=w*sample.x;oy+=w*sample.y;
+    return {...sample,px,py};
+  });
+  mx/=total;my/=total;ox/=total;oy/=total;
+  let numerator=0,denominator=0,spread=0;
+  for(const {px,py,x,y,weight:w} of projected){
+    numerator+=w*((px-mx)*(x-ox)+(py-my)*(y-oy));
+    denominator+=w*((px-mx)**2+(py-my)**2);
+    spread+=w*((x-ox)**2+(y-oy)**2);
   }
   const metricScale=numerator/denominator;
-  if(!Number.isFinite(metricScale)||metricScale<=0)return null;
-  const translation=new THREE.Vector3(centerObserved.x-metricScale*centerModel.x,centerObserved.y-metricScale*centerModel.y,0);
+  if(!Number.isFinite(metricScale)||metricScale<=0||spread<1e-10)return null;
+  const translation=new THREE.Vector3(ox-metricScale*mx,oy-metricScale*my,0);
+  let error=0;
+  for(const {px,py,x,y,weight:w} of projected)
+    error+=w*((metricScale*px+translation.x-x)**2+(metricScale*py+translation.y-y)**2);
+  return {metricScale,translation,error:error/spread};
+}
+
+function refineImageYaw(face,aspect,canonical,quaternion) {
+  const forward=new THREE.Vector3(0,0,1).applyQuaternion(quaternion);
+  // Pitch has already been validated on the owner's camera. Refine only the
+  // lateral turn about the head's own up axis, not pitch/roll or frontal poses.
+  const strength=THREE.MathUtils.smoothstep(Math.abs(forward.x),.2,.5)
+    *(1-THREE.MathUtils.smoothstep(Math.abs(forward.y),.35,.65));
+  if(strength<.01||forward.z<.2)return quaternion;
+  const samples=projectionSamples(face,aspect,canonical,YAW_ANCHORS);
+  const initial=screenProjection(samples,quaternion);
+  if(!initial||initial.error<1e-8)return quaternion;
+  const bound=THREE.MathUtils.degToRad(18)*strength,step=bound/6;
+  const candidate=delta=>{
+    const q=quaternion.clone().multiply(new THREE.Quaternion().setFromAxisAngle(HEAD_UP,delta));
+    const projection=screenProjection(samples,q);
+    return {q,delta,error:projection?.error??Infinity,
+      cost:(projection?.error??Infinity)+initial.error*.04*(delta/bound)**2};
+  };
+  let best=candidate(0);
+  for(let i=-6;i<=6;i++){const next=candidate(i*step);if(next.cost<best.cost)best=next;}
+  let low=Math.max(-bound,best.delta-step),high=Math.min(bound,best.delta+step);
+  for(let i=0;i<8;i++){
+    const a=candidate(low+(high-low)/3),b=candidate(high-(high-low)/3);
+    if(a.cost<b.cost)high=b.delta;else low=a.delta;
+    if(a.cost<best.cost)best=a;if(b.cost<best.cost)best=b;
+  }
+  // Require evidence from the image rather than multiplying every yaw by a
+  // fixed gain. Matrix rotation remains the prior and caps correction at 18°.
+  const improvement=1-best.error/initial.error;
+  return quaternion.clone().slerp(best.q,THREE.MathUtils.smoothstep(improvement,.15,.6));
+}
+
+export function estimateRigidFit(face,aspect,matrix,canonical,previousQuaternion=null,alpha=1,scale=1,offset=0,poseFace=face) {
+  if(!matrix?.data||matrix.data.length!==16||!matrix.data.every(Number.isFinite))return null;
+  const rotation=new THREE.Matrix4().extractRotation(new THREE.Matrix4().fromArray(matrix.data));
+  let quaternion=new THREE.Quaternion().setFromRotationMatrix(rotation).normalize();
+  quaternion=refineImageYaw(poseFace,aspect,canonical,quaternion);
+  if(previousQuaternion)quaternion.copy(previousQuaternion.clone().slerp(quaternion,alpha));
+  const rotated=canonical.map(v=>new THREE.Vector3(...v).applyQuaternion(quaternion));
+  const projection=screenProjection(projectionSamples(face,aspect,canonical,POSE_ANCHORS),quaternion);
+  if(!projection)return null;
+  const {metricScale,translation}=projection;
+  const forward=new THREE.Vector3(0,0,1).applyQuaternion(quaternion);
+  const attachment=THREE.MathUtils.smoothstep(Math.abs(forward.x),.15,.5)
+    *(1-THREE.MathUtils.smoothstep(Math.abs(forward.y),.55,.8));
+  const observedRoot=landmarkPoint(face[168],aspect);
+  const fittedRoot=rotated[168].clone().multiplyScalar(metricScale).add(translation);
+  const residual=new THREE.Vector3(observedRoot.x-fittedRoot.x,observedRoot.y-fittedRoot.y,0);
+  residual.clampLength(0,1.5*metricScale);
+  translation.addScaledVector(residual,attachment);
   // Canonical face units are cm. Fourteen cm is an aesthetic nominal width,
   // not a measured product size. Fit the lens plane just in front of the bridge.
   const anchor=new THREE.Vector3(0,2.625+offset*6.3,5.5);

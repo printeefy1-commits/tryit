@@ -61,8 +61,9 @@ try {
       return result;
     }
     const report=[];
-    for(const [name,pitch,yaw,noseVariation=0] of [
+    for(const [name,pitch,yaw,noseVariation=0,matrixYaw=yaw] of [
       ['front',0,0],['right',0,1],['left',0,-1],['down',1,0],['up',-1.2,0],
+      ['right-biased',0,.96,0,.72],['left-biased',0,-.96,0,-.72],
       ['down-nose-variation',1,0,1.2],
       ['right-down',.6,.8],['left-down',.6,-.8],['right-up',-.6,.8],['left-up',-.6,-.8]
     ]){
@@ -74,7 +75,8 @@ try {
         const p=new THREE.Vector3(x,y,z+noseVariation*nasal).applyQuaternion(q).multiplyScalar(s);
         return {x:.5+p.x/2,y:.5-p.y/2,z:0};
       });
-      const matrix={data:new THREE.Matrix4().makeRotationFromQuaternion(q).toArray()};
+      const reported=new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch,matrixYaw,0));
+      const matrix={data:new THREE.Matrix4().makeRotationFromQuaternion(reported).toArray()};
       const fit=estimateRigidFit(face,1,matrix,canonical);
       // Geometry is already in canonical cm; production model uses the same
       // 14-cm nominal width and anchor through its normalized wrapper.
@@ -92,7 +94,7 @@ try {
     for(const row of report){
       assert.ok(row.retained[0]>.85,`${row.name}: frame disappeared behind the proxy`);
       if(row.name.startsWith('down'))assert.ok(row.retained[1]>.95,`${row.name}: bridge is cut by the nose proxy`);
-      if(['right','left'].includes(row.name)){
+      if(['right','left','right-biased','left-biased'].includes(row.name)){
         assert.ok(row.retained[row.near]>.9,`${row.name}: near arm is incomplete`);
         assert.ok(row.retained[row.far]<.08,`${row.name}: far arm shows through the head`);
       }
