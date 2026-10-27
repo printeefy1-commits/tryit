@@ -63,7 +63,7 @@ location / {
 }
 ```
 
-Nom de marque : Lunette Caba. Le fichier original du logo reste à intégrer. Pour les futurs travaux cloud, utiliser le checkout existant ; ne pas créer de worktree sans demande explicite.
+Nom de marque : Lunette Caba. Logo original fourni par le propriétaire : `public/assets/lunette-caba-logo.png`, intégré dans les en-têtes public et administrateur. Pour les futurs travaux cloud, utiliser le checkout existant ; ne pas créer de worktree sans demande explicite.
 
 ## Validation du modèle de suivi
 
