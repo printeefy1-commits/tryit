@@ -70,3 +70,7 @@ Nom de marque : Lunette Caba. Logo original fourni par le propriétaire : `publi
 Le modèle officiel `float16/1` a été téléchargé avec succès. SHA-256 observé : `64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff`.
 
 Le test `CAMERA_FIXTURE=/chemin/vers/visage.y4m node scripts/camera-smoke.mjs` utilise une caméra simulée dans Chromium : chargement réel de MediaPipe, détection d’un visage, téléchargement PNG et arrêt de la caméra à la fermeture. Il a réussi avec le portrait de test officiel de MediaPipe (`https://storage.googleapis.com/mediapipe-assets/portrait.jpg`), converti en Y4M avec FFmpeg. Les fichiers de test sont locaux, non inclus dans le catalogue. Aucun résultat de ce test ne remplace la validation sur un téléphone et une webcam physiques.
+
+## Sauvegardes
+
+La sauvegarde quotidienne vers S3 (sans clés d'accès statiques), son installation sur EC2 et la restauration sont décrites dans [deploy/BACKUP.md](deploy/BACKUP.md). Le script `scripts/backup.py` archive le catalogue et les fichiers référencés, exclut les sessions, vérifie le SHA-256 et vérifie par relecture les archives transférées sur S3. Le bucket, le rôle IAM et le timer doivent être configurés sur le serveur avant activation.

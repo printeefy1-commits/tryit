@@ -1,0 +1,19 @@
+[Unit]
+Description=Lunette Caba verified S3 backup
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/tryit-backup.env
+Environment=AWS_PAGER=
+Environment=PATH=/opt/tryit-backup-tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/python3 /usr/local/lib/tryit-backup.py create --project /home/ubuntu/tryit --output /var/lib/tryit-backup --settings /etc/tryit.env --settings /etc/systemd/system/tryit.service --settings /etc/nginx/sites-available/tryit-elastic --bucket ${BACKUP_BUCKET} --region ${AWS_DEFAULT_REGION}
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/tryit-backup
+TimeoutStartSec=2h

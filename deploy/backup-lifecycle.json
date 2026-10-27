@@ -1,0 +1,9 @@
+{
+  "Rules": [{
+    "ID": "Expire-daily-backups-after-30-days",
+    "Status": "Enabled",
+    "Filter": {"Prefix": "daily/"},
+    "Expiration": {"Days": 30},
+    "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1}
+  }]
+}
