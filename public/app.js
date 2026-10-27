@@ -2,23 +2,189 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {estimateFit, smoothLandmarks, createFaceOccluder, updateFaceOccluder} from './tryon-fit.js';
 import {FaceLandmarker,FilesetResolver} from '/vendor/vision/vision_bundle.mjs';
+import {aborted, waitFor, fetchBuffer, transferMessage} from './tryon-loading.js';
 const $=s=>document.querySelector(s);const products=await fetch('/api/products').then(r=>r.json());
 const illustration='<svg viewBox="0 0 600 300" aria-hidden="true"><path d="M90 105 L25 65 M510 105 L575 65"/><path class="lenses" d="M65 110 Q150 65 255 110 L240 195 Q150 240 85 190 Z M345 110 Q450 65 535 110 L515 190 Q450 240 360 195 Z"/><path d="M255 120 Q300 95 345 120"/></svg>';
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 $('#count').textContent=products.length+' monture'+(products.length>1?'s':'');
 for(const p of products){const card=document.createElement('article');card.className='product';card.innerHTML=`<div class="product-art">${p.image?`<img class="${p.imageFit==='cover'?'product-image--cover':''}" src="${escape(p.image)}" alt="${escape(p.name)}">`:illustration}<span class="badge">${p.demo?'MODÈLE DÉMO':p.estimatedDimensions?'MODÈLE APPROXIMATIF':p.model?'ESSAYAGE 3D':'BIENTÔT EN 3D'}</span></div><p class="brand">${escape(p.brand)}</p><h3>${escape(p.name)}</h3><button ${!p.demo&&!p.model?'disabled':''}>${p.demo||p.model?'Essayer sur mon visage':'Essai bientôt disponible'} <span>↗</span></button>`;card.querySelector('button').onclick=()=>openTry(p);$('#products').append(card)}
 if(!products.length)$('#products').textContent='La collection arrive bientôt.';
-const dialog=$('#try-dialog'),video=$('#video'),canvas=$('#overlay');let selected,stream,landmarker,renderer,scene,camera,frame,model,loadVersion=0,busy=false,lastTime=-1,faceOccluder=null,filteredFace=null,lastTrackingTime=0;
-let topologyPromise;
-const readyProducts=products.filter(p=>p.demo||p.model);for(const p of readyProducts){const o=new Option(p.name,p.id);$('#model-select').add(o)}
+const dialog=$('#try-dialog'),video=$('#video'),canvas=$('#overlay');
+let selected,stream,landmarker,enginePromise,renderer,scene,camera,frame,model;
+let loadVersion=0,sessionVersion=0,busy=false,lastTime=-1;
+let faceOccluder=null,filteredFace=null,lastTrackingTime=0;
+let startupController=null,modelController=null,loadingMessage='';
+const readyProducts=products.filter(p=>p.demo||p.model);
+for(const p of readyProducts)$('#model-select').add(new Option(p.name,p.id));
+function phase(message, overlay=false) {
+  loadingMessage=message;
+  $('#try-status').textContent=message;
+  $('#camera-message').hidden=!overlay;
+  if(overlay)$('#camera-message').textContent=message;
+}
+function assertSession(version) {
+  if(version!==sessionVersion||!dialog.open)throw aborted();
+}
 function demoGlasses(){const group=new THREE.Group();const frameMat=new THREE.MeshStandardMaterial({color:0x252a24,roughness:.33});const lensMat=new THREE.MeshStandardMaterial({color:0x263c30,transparent:true,opacity:.83,roughness:.18,metalness:.2});for(const side of [-1,1]){const ring=new THREE.Mesh(new THREE.TorusGeometry(.23,.026,12,64),frameMat);ring.scale.y=.76;ring.position.x=side*.285;group.add(ring);const lens=new THREE.Mesh(new THREE.CircleGeometry(.21,64),lensMat);lens.scale.y=.76;lens.position.set(side*.285,0,-.008);group.add(lens);const arm=new THREE.Mesh(new THREE.BoxGeometry(.025,.035,.52),frameMat);arm.position.set(side*.52,.03,-.25);group.add(arm)}const bridge=new THREE.Mesh(new THREE.BoxGeometry(.14,.03,.035),frameMat);group.add(bridge);return group}
 function dispose(obj){obj.traverse(n=>{n.geometry?.dispose();const materials=Array.isArray(n.material)?n.material:n.material?[n.material]:[];for(const m of materials){for(const v of Object.values(m))if(v?.isTexture)v.dispose();m.dispose()}})}
-async function setModel(p){selected=p;$('#try-name').textContent=p.name;$('#model-select').value=p.id;$('#model-note').textContent=p.demo?'Le modèle de démonstration est une illustration, pas une reproduction de vos produits.':p.estimatedDimensions?'Reconstitution à partir de photos : dimensions, courbure et matériaux estimés. La fidélité au produit réel reste à valider.':'Aperçu du modèle 3D fourni pour cette monture. Le rendu dépend de votre appareil et de l’éclairage.';$('#snapshot').disabled=true;const version=++loadVersion;if(model){scene?.remove(model);dispose(model);model=null}if(!scene)return;try{let next;if(p.demo)next=demoGlasses();else{const gltf=await new GLTFLoader().loadAsync(p.model);next=gltf.scene;const box=new THREE.Box3().setFromObject(next),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());if(!size.x)throw Error('Modèle vide');const fitting=gltf.asset?.extras?.lunetteCaba;const anchored=Array.isArray(fitting?.anchor)&&fitting.anchor.length===3&&fitting.anchor.every(Number.isFinite)&&Number.isFinite(fitting.referenceWidth)&&fitting.referenceWidth>0;next.position.sub(anchored?new THREE.Vector3(...fitting.anchor):center);const wrapper=new THREE.Group();wrapper.add(next);wrapper.scale.setScalar(1/(anchored?fitting.referenceWidth:size.x));const normalized=new THREE.Group();normalized.add(wrapper);next=normalized}if(version!==loadVersion){dispose(next);return}model=next;model.visible=false;scene.add(model)}catch(e){$('#try-status').textContent='Impossible de charger le modèle 3D. Vérifiez son fichier.'}}
-function openTry(p){dialog.showModal();$('#camera-message').hidden=false;$('#camera-message').textContent='Activez la caméra pour découvrir votre monture.';$('#try-status').textContent='Les images restent sur votre appareil.';setModel(p)}
-$('#model-select').onchange=e=>setModel(readyProducts.find(p=>p.id===e.target.value));
-function stop(){cancelAnimationFrame(frame);stream?.getTracks().forEach(t=>t.stop());stream=null;video.srcObject=null;$('#start-camera').disabled=false;$('#snapshot').disabled=true;loadVersion++;if(model){scene?.remove(model);dispose(model);model=null}if(faceOccluder){dispose(faceOccluder);faceOccluder=null}renderer?.dispose();renderer=null;scene=null;camera=null;lastTime=-1;filteredFace=null;lastTrackingTime=0}
-$('#close-try').onclick=()=>dialog.close();dialog.addEventListener('close',stop);window.addEventListener('pagehide',stop);
-$('#start-camera').onclick=async()=>{if(busy)return;busy=true;$('#start-camera').disabled=true;$('#try-status').textContent='Chargement du suivi du visage…';try{if(!navigator.mediaDevices?.getUserMedia)throw Error('HTTPS requis pour accéder à la caméra.');const pending=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:960},height:{ideal:720}},audio:false});if(!dialog.open){pending.getTracks().forEach(t=>t.stop());return}stream=pending;video.srcObject=stream;await video.play();if(!landmarker){const files=await FilesetResolver.forVisionTasks('/vendor/vision/wasm');landmarker=await FaceLandmarker.createFromOptions(files,{baseOptions:{modelAssetPath:'/models/face_landmarker.task',delegate:'CPU'},runningMode:'VIDEO',numFaces:1})}if(!dialog.open)return;canvas.width=video.videoWidth;canvas.height=video.videoHeight;$('#camera-stage').style.aspectRatio=canvas.width+'/'+canvas.height;topologyPromise??=fetch('/models/face-topology.json').then(r=>{if(!r.ok)throw Error('Masque de profondeur indisponible');return r.json()}).catch(e=>{topologyPromise=null;throw e});const topology=await topologyPromise;if(!dialog.open)return;renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,preserveDrawingBuffer:true});renderer.setSize(canvas.width,canvas.height,false);scene=new THREE.Scene();const aspect=canvas.width/canvas.height;camera=new THREE.OrthographicCamera(-aspect,aspect,1,-1,.01,100);camera.position.z=5;faceOccluder=createFaceOccluder(topology.triangles);scene.add(faceOccluder);scene.add(new THREE.HemisphereLight(0xffffff,0x777777,3));const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(0,2,5);scene.add(light);await setModel(selected);$('#camera-message').hidden=true;tick()}catch(e){stop();$('#try-status').textContent=e.name==='NotAllowedError'?'Autorisez la caméra dans votre navigateur pour continuer.':e.name==='NotFoundError'?'Aucune caméra détectée.':`Impossible de démarrer : ${e.message}` }finally{busy=false;$('#start-camera').disabled=!!stream}};
+async function setModel(p) {
+  selected=p;
+  $('#try-name').textContent=p.name;
+  $('#model-select').value=p.id;
+  $('#model-note').textContent=p.demo
+    ? 'Le modèle de démonstration est une illustration, pas une reproduction de vos produits.'
+    : p.estimatedDimensions
+      ? 'Reconstitution à partir de photos : dimensions, courbure et matériaux estimés. La fidélité au produit réel reste à valider.'
+      : 'Aperçu du modèle 3D fourni pour cette monture. Le rendu dépend de votre appareil et de l’éclairage.';
+  $('#snapshot').disabled=true;
+  const version=++loadVersion,session=sessionVersion;
+  modelController?.abort();
+  const controller=new AbortController();
+  modelController=controller;
+  if(model){scene?.remove(model);dispose(model);model=null;}
+  if(!scene)return;
+  let next;
+  const current=()=>version===loadVersion&&session===sessionVersion&&dialog.open;
+  try {
+    phase('Chargement de la monture…');
+    if(p.demo)next=demoGlasses();
+    else {
+      const buffer=await fetchBuffer(p.model,{
+        signal:controller.signal,label:'Modèle 3D',
+        onProgress:(bytes,total)=>{if(current())phase(transferMessage('Téléchargement de la monture',bytes,total));}
+      });
+      if(!current())throw aborted();
+      if(buffer.byteLength<12||new DataView(buffer).getUint32(0,true)!==0x46546c67)
+        throw new Error('Le fichier de la monture n’est pas un GLB valide.');
+      phase('Préparation de la monture et de ses textures…');
+      const parsing=new GLTFLoader().parseAsync(buffer,new URL('.',new URL(p.model,location.href)).href);
+      let gltf;
+      try {
+        gltf=await waitFor(parsing,45000,'La préparation de la monture prend trop de temps. Réessayez.',controller.signal);
+      } catch(error) {
+        // A decoder can finish after cancellation; release that late result.
+        parsing.then(value=>dispose(value.scene),()=>{});
+        throw error;
+      }
+      next=gltf.scene;
+      const box=new THREE.Box3().setFromObject(next),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+      if(!size.x)throw new Error('Le modèle 3D est vide.');
+      const fitting=gltf.asset?.extras?.lunetteCaba;
+      const anchored=Array.isArray(fitting?.anchor)&&fitting.anchor.length===3&&fitting.anchor.every(Number.isFinite)&&Number.isFinite(fitting.referenceWidth)&&fitting.referenceWidth>0;
+      next.position.sub(anchored?new THREE.Vector3(...fitting.anchor):center);
+      const wrapper=new THREE.Group();wrapper.add(next);wrapper.scale.setScalar(1/(anchored?fitting.referenceWidth:size.x));
+      const normalized=new THREE.Group();normalized.add(wrapper);next=normalized;
+    }
+    if(!current())throw aborted();
+    model=next;model.visible=false;scene.add(model);
+    loadingMessage='';
+    $('#camera-message').hidden=true;
+  } catch(error) {
+    if(next&&next!==model)dispose(next);
+    if(!current()||controller.signal.aborted)throw aborted();
+    throw error;
+  }
+}
+
+function openTry(p) {
+  dialog.showModal();
+  loadingMessage='';
+  $('#camera-message').hidden=false;
+  $('#camera-message').textContent='Activez la caméra pour découvrir votre monture.';
+  $('#try-status').textContent='Les images restent sur votre appareil.';
+  setModel(p).catch(failed);
+}
+$('#model-select').onchange=()=>setModel(readyProducts.find(p=>p.id===$('#model-select').value)).catch(failed);
+
+function stop() {
+  ++sessionVersion;++loadVersion;
+  startupController?.abort();startupController=null;
+  modelController?.abort();modelController=null;
+  cancelAnimationFrame(frame);
+  stream?.getTracks().forEach(t=>t.stop());stream=null;video.srcObject=null;
+  if(model){scene?.remove(model);dispose(model);model=null;}
+  if(faceOccluder){dispose(faceOccluder);faceOccluder=null;}
+  if(renderer){renderer.clear();renderer.dispose();renderer=null;}
+  scene=null;camera=null;lastTime=-1;filteredFace=null;lastTrackingTime=0;loadingMessage='';busy=false;
+  $('#start-camera').disabled=false;$('#start-camera').textContent='Activer la caméra';
+  $('#model-select').disabled=false;$('#snapshot').disabled=true;
+}
+function failed(error) {
+  if(error.name==='AbortError')return;
+  console.error('Virtual try-on:',error.message);
+  stop();
+  const message=error.name==='NotAllowedError'
+    ? 'Autorisez la caméra dans votre navigateur pour continuer.'
+    : error.name==='NotFoundError'?'Aucune caméra détectée.':error.message;
+  phase(message,true);
+  $('#start-camera').textContent='Réessayer';
+}
+$('#close-try').onclick=()=>dialog.close();
+dialog.addEventListener('close',stop);
+window.addEventListener('pagehide',stop);
+
+async function getFaceEngine(signal,session) {
+  if(landmarker)return landmarker;
+  // Reuse an in-flight initializer across close/retry to avoid duplicate WASM heaps.
+  if(!enginePromise) {
+    enginePromise=(async()=>{
+      const buffer=await fetchBuffer('/models/face_landmarker.task',{
+        label:'Suivi du visage',maxBytes:10*1024*1024,
+        onProgress:(bytes,total)=>{if(session===sessionVersion&&dialog.open)phase(transferMessage('Téléchargement du suivi du visage',bytes,total),true);}
+      });
+      if(session===sessionVersion&&dialog.open)phase('Initialisation du suivi du visage…',true);
+      const files=await FilesetResolver.forVisionTasks('/vendor/vision/wasm');
+      const detector=await FaceLandmarker.createFromOptions(files,{
+        baseOptions:{modelAssetBuffer:new Uint8Array(buffer),delegate:'CPU'},runningMode:'VIDEO',numFaces:1
+      });
+      landmarker=detector;
+      return detector;
+    })().finally(()=>{enginePromise=null;});
+  }
+  return waitFor(enginePromise,60000,'Le suivi du visage ne démarre pas. Vérifiez votre connexion puis réessayez.',signal);
+}
+
+$('#start-camera').onclick=async()=>{
+  if(busy||stream)return;
+  const session=++sessionVersion;
+  const controller=new AbortController();startupController=controller;
+  busy=true;$('#start-camera').disabled=true;$('#model-select').disabled=true;
+  phase('Autorisez l’accès à votre caméra…',true);
+  try {
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('HTTPS requis pour accéder à la caméra.');
+    const pending=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:960},height:{ideal:720}},audio:false});
+    if(session!==sessionVersion||!dialog.open){pending.getTracks().forEach(t=>t.stop());return;}
+    stream=pending;video.srcObject=stream;
+    await waitFor(video.play(),15000,'La caméra ne fournit pas d’image. Fermez les autres applications caméra puis réessayez.',controller.signal);
+    assertSession(session);
+    phase('Chargement du suivi du visage…',true);
+    await getFaceEngine(controller.signal,session);
+    assertSession(session);
+    phase('Préparation du suivi…',true);
+    const topologyBuffer=await fetchBuffer('/models/face-topology.json',{signal:controller.signal,label:'Suivi du visage',maxBytes:1024*1024});
+    const topology=JSON.parse(new TextDecoder().decode(topologyBuffer));
+    assertSession(session);
+    canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+    $('#camera-stage').style.aspectRatio=canvas.width+'/'+canvas.height;
+    phase('Initialisation de l’affichage 3D…',true);
+    renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,preserveDrawingBuffer:true});
+    renderer.setSize(canvas.width,canvas.height,false);
+    scene=new THREE.Scene();const aspect=canvas.width/canvas.height;
+    camera=new THREE.OrthographicCamera(-aspect,aspect,1,-1,.01,100);camera.position.z=5;
+    faceOccluder=createFaceOccluder(topology.triangles);scene.add(faceOccluder);
+    scene.add(new THREE.HemisphereLight(0xffffff,0x777777,3));
+    const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(0,2,5);scene.add(light);
+    // Tracking no longer waits for a large GLB to download and decode.
+    tick();
+    await setModel(selected);
+    assertSession(session);
+    $('#start-camera').textContent='Caméra active';
+  } catch(error) {
+    if(session===sessionVersion)failed(error);
+  } finally {
+    if(session===sessionVersion){busy=false;$('#start-camera').disabled=!!stream;$('#model-select').disabled=false;}
+  }
+};
 function tick() {
   if (!stream || !renderer) return;
   try {
@@ -51,7 +217,7 @@ function tick() {
         if (faceOccluder) faceOccluder.visible = false;
       }
       $('#snapshot').disabled = !fitted;
-      $('#try-status').textContent = fitted
+      if(!loadingMessage)$('#try-status').textContent = fitted
         ? 'Visage détecté · Essayez une autre monture ou prenez une photo.'
         : 'Placez votre visage dans le cadre.';
       renderer.render(scene, camera);
