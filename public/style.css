@@ -7,3 +7,5 @@
 .logo:focus-visible{outline:2px solid var(--ink);outline-offset:5px}
 @media(max-width:750px){.logo{gap:8px}.logo .brand-mark{width:54px;height:56px}.brand-mark img{width:94px;height:94px;left:-20px;top:-23px}}
 @media(max-width:360px){header nav{gap:9px;font-size:10px}.logo{gap:5px}}
+
+.product-art img.product-image--cover{object-fit:cover;object-position:50% 62%}

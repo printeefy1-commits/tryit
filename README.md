@@ -74,3 +74,7 @@ Le test `CAMERA_FIXTURE=/chemin/vers/visage.y4m node scripts/camera-smoke.mjs` u
 ## Sauvegardes
 
 La sauvegarde quotidienne vers S3 (sans clés d'accès statiques), son installation sur EC2 et la restauration sont décrites dans [deploy/BACKUP.md](deploy/BACKUP.md). Le script `scripts/backup.py` archive le catalogue et les fichiers référencés, exclut les sessions, vérifie le SHA-256 et vérifie par relecture les archives transférées sur S3. Le bucket, le rôle IAM et le timer doivent être configurés sur le serveur avant activation.
+
+## Premier produit photo-référencé
+
+Le prototype 3D **HEAD 12028 Col.400** et sa photo sont fournis dans `public/products/head-12028/`. [Fidélité, régénération et import sur EC2](docs/head-12028.md). L'import est additif et conserve les produits existants. Ce modèle a des dimensions estimées ; il n'est pas une reproduction mesurée.
