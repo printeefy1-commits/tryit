@@ -4,8 +4,6 @@
 .logo{display:inline-flex;align-items:center;gap:12px;flex-shrink:0}
 .logo .brand-mark{display:block;position:relative;overflow:hidden;width:76px;height:76px;margin:0;flex-shrink:0}
 .brand-mark img{position:absolute;width:132px;height:132px;max-width:none;left:-28px;top:-33px}
-.logo .brand-name{display:flex;flex-direction:column;gap:4px;margin:0;font-size:16px;font-weight:700;letter-spacing:4px;line-height:1.15}
-.logo .brand-name span{margin:0;font-weight:400}
 .logo:focus-visible{outline:2px solid var(--ink);outline-offset:5px}
-@media(max-width:750px){.logo{gap:8px}.logo .brand-mark{width:54px;height:56px}.brand-mark img{width:94px;height:94px;left:-20px;top:-23px}.logo .brand-name{font-size:12px;letter-spacing:2px}}
-@media(max-width:360px){header nav{gap:9px;font-size:10px}.logo{gap:5px}.logo .brand-name{font-size:11px;letter-spacing:1px}}
+@media(max-width:750px){.logo{gap:8px}.logo .brand-mark{width:54px;height:56px}.brand-mark img{width:94px;height:94px;left:-20px;top:-23px}}
+@media(max-width:360px){header nav{gap:9px;font-size:10px}.logo{gap:5px}}
