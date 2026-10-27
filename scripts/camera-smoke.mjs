@@ -8,7 +8,7 @@ let browser;
 try{
 await new Promise((resolve,reject)=>{child.stdout.once('data',resolve);child.once('exit',()=>reject(Error('Server failed')))});
 browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-fake-video-capture=${process.env.CAMERA_FIXTURE}`,'--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
-const page=await browser.newPage({permissions:['camera'],acceptDownloads:true});const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')console.error(m.text())});
+const page=await browser.newPage({permissions:['camera'],acceptDownloads:true});const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&m.text()!=='INFO: Created TensorFlow Lite XNNPACK delegate for CPU.'){errors.push(m.text());console.error(m.text())}});
 await page.goto('http://127.0.0.1:3189');
 await page.getByRole('button',{name:'Essayer sur mon visage'}).first().click();
 if(process.env.TRYON_PRODUCT_ID)await page.locator('#model-select').selectOption(process.env.TRYON_PRODUCT_ID);

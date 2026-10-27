@@ -24,7 +24,7 @@ if ((await read()).some(p=>p.id==='demo' && p.demo && p.brand==='ATELIER VISION'
   await mutate(items=>{const p=items.find(p=>p.id==='demo' && p.demo && p.brand==='ATELIER VISION');if(p)p.brand='LUNETTE CABA'});
 }
 app.disable('x-powered-by'); if(prod)app.set('trust proxy',1);
-app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'","'wasm-unsafe-eval'","'sha256-"+crypto.createHash('sha256').update('{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}').digest('base64')+"'"],styleSrc:["'self'"],imgSrc:["'self'","data:","blob:"],connectSrc:["'self'"],workerSrc:["'self'","blob:"],upgradeInsecureRequests:prod?[]:null}}}));
+app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'","'wasm-unsafe-eval'","'sha256-"+crypto.createHash('sha256').update('{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}').digest('base64')+"'"],styleSrc:["'self'"],imgSrc:["'self'","data:","blob:"],connectSrc:["'self'","blob:"],workerSrc:["'self'","blob:"],upgradeInsecureRequests:prod?[]:null}}}));
 app.use(express.json({limit:'32kb'}));
 // Sessions expire eight hours after login. Avoid background touch writes that
 // could recreate a deleted session when a request overlaps logout.

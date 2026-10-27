@@ -80,3 +80,5 @@ La sauvegarde quotidienne vers S3 (sans clés d'accès statiques), son installat
 Le prototype 3D **HEAD 12028 Col.400** et sa photo sont fournis dans `public/products/head-12028/`. [Fidélité, régénération et import sur EC2](docs/head-12028.md). L'import est additif et conserve les produits existants. Ce modèle a des dimensions estimées ; il n'est pas une reproduction mesurée.
 
 Pour remplacer le prototype par une reconstruction photogrammétrique : [workflow RealityScan et capture des photos](docs/realityscan-workflow.md). Le suivi applique un ajustement basé sur les iris, une rotation 3D et un masque de profondeur facial local ; ces corrections ne garantissent ni une géométrie produit fidèle ni une mesure physique.
+
+Le propriétaire a ensuite fourni un GLB via la release `model-v1`. Sa version optimisée avec textures intégrées et ancrage est disponible : [traitement, provenance et mise à jour du produit existant](docs/generated-head-model.md). Utiliser `scripts/upgrade-head-12028.mjs` pour ce remplacement ; relancer l'import initial ne remplace pas un produit déjà présent.
