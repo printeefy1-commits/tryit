@@ -1,0 +1,6 @@
+Face depth-mask topology is derived from the canonical face mesh distributed by
+Google AI Edge / MediaPipe under the Apache License, Version 2.0.
+Original source:
+https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/modules/face_geometry/data/canonical_face_model.obj
+The topology was converted from OBJ faces to zero-based triangle indices.
+See MEDIAPIPE-LICENSE.txt for the license text.

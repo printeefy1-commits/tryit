@@ -78,3 +78,5 @@ La sauvegarde quotidienne vers S3 (sans clés d'accès statiques), son installat
 ## Premier produit photo-référencé
 
 Le prototype 3D **HEAD 12028 Col.400** et sa photo sont fournis dans `public/products/head-12028/`. [Fidélité, régénération et import sur EC2](docs/head-12028.md). L'import est additif et conserve les produits existants. Ce modèle a des dimensions estimées ; il n'est pas une reproduction mesurée.
+
+Pour remplacer le prototype par une reconstruction photogrammétrique : [workflow RealityScan et capture des photos](docs/realityscan-workflow.md). Le suivi applique un ajustement basé sur les iris, une rotation 3D et un masque de profondeur facial local ; ces corrections ne garantissent ni une géométrie produit fidèle ni une mesure physique.
