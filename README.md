@@ -1,4 +1,4 @@
-# Atelier Vision
+# Lunette Caba
 
 Prototype de plateforme d’essayage de lunettes, en français. Node.js 24, Express, Three.js et MediaPipe. Client sans compte ; un administrateur. Aucun paiement ni sélecteur de couleurs.
 
@@ -34,7 +34,7 @@ Le modèle Éclipse est une géométrie de démonstration générée dans le nav
 
 ```ini
 [Unit]
-Description=Atelier Vision
+Description=Lunette Caba
 After=network.target
 [Service]
 User=atelier
@@ -63,7 +63,7 @@ location / {
 }
 ```
 
-Identité temporaire à remplacer après réception du nom et du logo. Pour les futurs travaux cloud, utiliser le checkout existant ; ne pas créer de worktree sans demande explicite.
+Nom de marque : Lunette Caba. Le fichier original du logo reste à intégrer. Pour les futurs travaux cloud, utiliser le checkout existant ; ne pas créer de worktree sans demande explicite.
 
 ## Validation du modèle de suivi
 

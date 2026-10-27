@@ -14,11 +14,15 @@ if(!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length<12) throw Er
 if(prod && (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length<32)) throw Error('Set SESSION_SECRET (at least 32 characters).');
 await fs.mkdir(path.join(root,'data'),{recursive:true}); await fs.mkdir(path.join(root,'uploads'),{recursive:true});
 const db=path.join(root,'data/catalog.json');
-const demo={id:'demo',name:'Éclipse 01',brand:'ATELIER VISION',description:'Une silhouette intemporelle. Découvrez notre monture de démonstration en réalité augmentée.',visible:true,demo:true,scale:1,offset:0};
+const demo={id:'demo',name:'Éclipse 01',brand:'LUNETTE CABA',description:'Une silhouette intemporelle. Découvrez notre monture de démonstration en réalité augmentée.',visible:true,demo:true,scale:1,offset:0};
 try{await fs.access(db)}catch{await fs.writeFile(db,JSON.stringify([demo]))}
 const read=async()=>JSON.parse(await fs.readFile(db,'utf8'));
 let queue=Promise.resolve();
 function mutate(fn){const next=queue.then(async()=>{const items=await read();const result=await fn(items);await fs.writeFile(db+'.tmp',JSON.stringify(items,null,2));await fs.rename(db+'.tmp',db);return result});queue=next.catch(()=>{});return next}
+// Rename only the original seeded demo; preserve administrator-created products.
+if ((await read()).some(p=>p.id==='demo' && p.demo && p.brand==='ATELIER VISION')) {
+  await mutate(items=>{const p=items.find(p=>p.id==='demo' && p.demo && p.brand==='ATELIER VISION');if(p)p.brand='LUNETTE CABA'});
+}
 app.disable('x-powered-by'); if(prod)app.set('trust proxy',1);
 app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'","'wasm-unsafe-eval'","'sha256-"+crypto.createHash('sha256').update('{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}').digest('base64')+"'"],styleSrc:["'self'"],imgSrc:["'self'","data:","blob:"],connectSrc:["'self'"],workerSrc:["'self'","blob:"],upgradeInsecureRequests:prod?[]:null}}}));
 app.use(express.json({limit:'32kb'}));
@@ -50,4 +54,4 @@ app.use('/vendor/three',express.static(path.join(root,'node_modules/three')));
 app.use('/vendor/vision',express.static(path.join(root,'node_modules/@mediapipe/tasks-vision')));
 app.use(express.static(path.join(root,'public')));
 app.use((err,req,res,next)=>{console.error(err.message);res.status(500).json({error:'Opération impossible. Vérifiez les fichiers et réessayez.'})});
-const server=app.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log('Atelier Vision listening on port '+server.address().port));
+const server=app.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log('Lunette Caba listening on port '+server.address().port));
