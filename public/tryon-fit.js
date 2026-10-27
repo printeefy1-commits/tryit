@@ -61,3 +61,71 @@ export function updateFaceOccluder(mesh, face, aspect) {
   positions.needsUpdate = true;
   mesh.visible = true;
 }
+
+// Rigid pose is supplied by MediaPipe's canonical-face transform. Re-estimate
+// screen scale/translation over distributed facial anchors, not the far iris,
+// whose predicted position can collapse when it is hidden in a profile view.
+const POSE_ANCHORS=[4,6,10,33,54,67,70,93,127,132,133,152,168,172,197,234,251,263,284,297,300,323,356,361,362,397,454];
+export function estimateRigidFit(face,aspect,matrix,canonical,previousQuaternion=null,alpha=1,scale=1,offset=0) {
+  if(!matrix?.data||matrix.data.length!==16||!matrix.data.every(Number.isFinite))return null;
+  const rotation=new THREE.Matrix4().extractRotation(new THREE.Matrix4().fromArray(matrix.data));
+  const quaternion=new THREE.Quaternion().setFromRotationMatrix(rotation).normalize();
+  if(previousQuaternion)quaternion.copy(previousQuaternion.clone().slerp(quaternion,alpha));
+  const rotated=canonical.map(v=>new THREE.Vector3(...v).applyQuaternion(quaternion));
+  const centerModel=new THREE.Vector2(),centerObserved=new THREE.Vector2();
+  let total=0;
+  const samples=POSE_ANCHORS.map(i=>{
+    const observed=landmarkPoint(face[i],aspect),predicted=rotated[i];
+    const weight=[33,133,263,362,168].includes(i)?3:1;
+    centerModel.addScaledVector(new THREE.Vector2(predicted.x,predicted.y),weight);
+    centerObserved.addScaledVector(new THREE.Vector2(observed.x,observed.y),weight);total+=weight;
+    return {observed,predicted,weight};
+  });
+  centerModel.multiplyScalar(1/total);centerObserved.multiplyScalar(1/total);
+  let numerator=0,denominator=0;
+  for(const {observed,predicted,weight} of samples){
+    const x=predicted.x-centerModel.x,y=predicted.y-centerModel.y;
+    numerator+=weight*(x*(observed.x-centerObserved.x)+y*(observed.y-centerObserved.y));
+    denominator+=weight*(x*x+y*y);
+  }
+  const metricScale=numerator/denominator;
+  if(!Number.isFinite(metricScale)||metricScale<=0)return null;
+  const translation=new THREE.Vector3(centerObserved.x-metricScale*centerModel.x,centerObserved.y-metricScale*centerModel.y,0);
+  // Canonical face units are cm. Fourteen cm is an aesthetic nominal width,
+  // not a measured product size. Fit the lens plane just in front of the bridge.
+  const anchor=new THREE.Vector3(0,2.625+offset*6.3,5.5);
+  const position=anchor.applyQuaternion(quaternion).multiplyScalar(metricScale).add(translation);
+  // The canonical template is wide at the temples. Reserve side clearance in
+  // the depth proxy so the near temple is not incorrectly buried in the head.
+  // Screen-space face contours remain the measured landmarks, unchanged.
+  const elements=new THREE.Matrix4().makeRotationFromQuaternion(quaternion).elements;
+  const occlusionDepths=canonical.map(([x,y,z])=>{
+    const side=THREE.MathUtils.smoothstep(Math.abs(x),5,7.8);
+    const rear=THREE.MathUtils.smoothstep(3.2-z,0,5);
+    const clearanceX=x*(1-.16*side*rear);
+    return elements[2]*clearanceX+elements[6]*y+elements[10]*z;
+  });
+  return {position,quaternion,width:14*metricScale*scale,metricScale,translation,rotated,occlusionDepths};
+}
+
+export function createHeadOccluder() {
+  const geometry=new THREE.SphereGeometry(1,32,24);
+  // Scalp/back-of-head volume. Leave the temples outside the narrow side radius,
+  // and keep the front surface behind the lens plane at canonical z=5.5.
+  geometry.scale(6.7,10,8);
+  geometry.translate(0,3,-4.5);
+  const material=new THREE.MeshBasicMaterial({colorWrite:false,depthWrite:true,depthTest:true,side:THREE.DoubleSide});
+  const mesh=new THREE.Mesh(geometry,material);
+  mesh.name='head-volume-depth-mask';mesh.renderOrder=-11;mesh.visible=false;
+  return mesh;
+}
+
+export function updateRigidOccluders(faceMesh,headMesh,face,aspect,fit) {
+  const positions=faceMesh.geometry.attributes.position;
+  for(let i=0;i<positions.count;i++){
+    const p=landmarkPoint(face[i],aspect);
+    positions.setXYZ(i,p.x,p.y,fit.occlusionDepths[i]*fit.metricScale+fit.translation.z);
+  }
+  positions.needsUpdate=true;faceMesh.visible=true;
+  headMesh.position.copy(fit.translation);headMesh.quaternion.copy(fit.quaternion);headMesh.scale.setScalar(fit.metricScale);headMesh.visible=true;
+}
