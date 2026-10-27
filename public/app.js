@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {smoothLandmarks, createFaceOccluder, estimateRigidFit, createHeadOccluder, updateRigidOccluders} from './tryon-fit.js';
+import {smoothLandmarks, createFaceOccluder, estimateRigidFit, createHeadOccluder, updateRigidOccluders, PoseContinuity} from './tryon-fit.js';
 import {FaceLandmarker,FilesetResolver} from '/vendor/vision/vision_bundle.mjs';
 import {aborted, waitFor, fetchBuffer, transferMessage} from './tryon-loading.js';
 const $=s=>document.querySelector(s);const products=await fetch('/api/products').then(r=>r.json());
@@ -14,6 +14,7 @@ let selected,stream,landmarker,enginePromise,renderer,scene,camera,frame,model;
 let loadVersion=0,sessionVersion=0,busy=false,lastTime=-1;
 let faceOccluder=null,headOccluder=null,canonicalFace=null,poseQuaternion=null,filteredFace=null,lastTrackingTime=0;
 let startupController=null,modelController=null,loadingMessage='';
+const poseContinuity=new PoseContinuity();
 const readyProducts=products.filter(p=>p.demo||p.model);
 for(const p of readyProducts)$('#model-select').add(new Option(p.name,p.id));
 function phase(message, overlay=false) {
@@ -106,6 +107,7 @@ function stop() {
   if(faceOccluder){dispose(faceOccluder);faceOccluder=null;}
   if(headOccluder){dispose(headOccluder);headOccluder=null;}
   poseQuaternion=null;
+  poseContinuity.reset();
   if(renderer){renderer.clear();renderer.dispose();renderer=null;}
   scene=null;camera=null;lastTime=-1;filteredFace=null;lastTrackingTime=0;loadingMessage='';busy=false;
   $('#start-camera').disabled=false;$('#start-camera').textContent='Activer la caméra';
@@ -137,7 +139,8 @@ async function getFaceEngine(signal,session) {
       if(session===sessionVersion&&dialog.open)phase('Initialisation du suivi du visage…',true);
       const files=await FilesetResolver.forVisionTasks('/vendor/vision/wasm');
       const detector=await FaceLandmarker.createFromOptions(files,{
-        baseOptions:{modelAssetBuffer:new Uint8Array(buffer),delegate:'CPU'},runningMode:'VIDEO',numFaces:1,outputFacialTransformationMatrixes:true
+        baseOptions:{modelAssetBuffer:new Uint8Array(buffer),delegate:'CPU'},runningMode:'VIDEO',numFaces:1,outputFacialTransformationMatrixes:true,
+        minFaceDetectionConfidence:.4,minFacePresenceConfidence:.35,minTrackingConfidence:.35
       });
       landmarker=detector;
       return detector;
@@ -199,6 +202,7 @@ function tick() {
       const result = landmarker.detectForVideo(video, now);
       const face = result.faceLandmarks?.[0];
       let fitted = false;
+      let fit=null;
       if (face) {
         const dt = lastTrackingTime ? Math.min((now - lastTrackingTime) / 1000, 0.2) : 1;
         filteredFace = smoothLandmarks(filteredFace, face, 1 - Math.exp(-dt / 0.055));
@@ -206,17 +210,19 @@ function tick() {
         const aspect = canvas.width / canvas.height;
         const alpha=1-Math.exp(-dt/0.055);
         const matrix=result.facialTransformationMatrixes?.[0];
-        const fit=canonicalFace&&matrix?estimateRigidFit(filteredFace,aspect,matrix,canonicalFace,poseQuaternion,alpha,selected.scale,selected.offset):null;
+        fit=canonicalFace&&matrix?estimateRigidFit(filteredFace,aspect,matrix,canonicalFace,poseQuaternion,alpha,selected.scale,selected.offset):null;
         if(fit)poseQuaternion=fit.quaternion.clone();
-        if (model && fit) {
-          model.visible = true;
-          model.position.copy(fit.position);
-          model.quaternion.copy(fit.quaternion);
-          model.scale.setScalar(fit.width);
-          updateRigidOccluders(faceOccluder,headOccluder,filteredFace,aspect,fit);
-          fitted = true;
-        }
-      } else {
+      }
+      const tracking=poseContinuity.update(fit,now);
+      if (model && tracking.fit) {
+        model.visible = true;
+        model.position.copy(tracking.fit.position);
+        model.quaternion.copy(tracking.fit.quaternion);
+        model.scale.setScalar(tracking.fit.width);
+        if(!tracking.held)updateRigidOccluders(faceOccluder,headOccluder,filteredFace,canvas.width/canvas.height,fit);
+        fitted = true;
+      }
+      if(!tracking.fit) {
         filteredFace = null;
         poseQuaternion=null;
         lastTrackingTime = 0;
@@ -226,10 +232,10 @@ function tick() {
         if (faceOccluder) faceOccluder.visible = false;
         if (headOccluder) headOccluder.visible = false;
       }
-      $('#snapshot').disabled = !fitted;
+      $('#snapshot').disabled = !fitted||tracking.held;
       if(!loadingMessage)$('#try-status').textContent = fitted
-        ? 'Visage détecté · Essayez une autre monture ou prenez une photo.'
-        : face ? 'Tournez légèrement votre visage vers la caméra.' : 'Placez votre visage dans le cadre.';
+        ? tracking.held ? 'Suivi momentanément incertain…' : 'Visage détecté · Essayez une autre monture ou prenez une photo.'
+        : 'Visage insuffisamment visible · Regardez légèrement vers la caméra pour reprendre le suivi.';
       renderer.render(scene, camera);
     }
     frame = requestAnimationFrame(tick);

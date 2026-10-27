@@ -86,3 +86,5 @@ Le propriétaire a ensuite fourni un GLB via la release `model-v1`. Sa version o
 Si la caméra s'affiche sans lunettes, voir [les phases de chargement, les délais et le diagnostic serveur](docs/tryon-loading.md). Le suivi ne dépend plus de la fin du téléchargement du GLB ; la progression et les erreurs de fichiers sont affichées et une nouvelle tentative est possible.
 
 Pour les défauts de taille/décalage en tournant la tête ou les branches visibles au-dessus du front : [correction de la pose rigide et du volume crânien](docs/rigid-head-pose.md). La validation des mouvements réels du propriétaire reste nécessaire.
+
+Le contrôle `node scripts/occlusion-smoke.mjs` rend le vrai GLB sous dix positions et vérifie le pont et les branches par couverture de pixels. Les marges de profondeur et le maintien limité à 220 ms en cas de perte de suivi sont décrits dans le même document.

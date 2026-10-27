@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import * as THREE from 'three';
-import {estimateRigidFit,createFaceOccluder,createHeadOccluder,updateRigidOccluders} from '../public/tryon-fit.js';
+import {estimateRigidFit,createFaceOccluder,createHeadOccluder,updateRigidOccluders,PoseContinuity} from '../public/tryon-fit.js';
 const canonical=JSON.parse(await fs.readFile(new URL('../public/models/canonical-face.json',import.meta.url))).vertices;
 function observation(euler,aspect=4/3){
  const q=new THREE.Quaternion().setFromEuler(euler),s=.045,t=new THREE.Vector3(.12,-.07,0);
@@ -42,7 +42,9 @@ test('face and back-of-head masks share the same rigid depth reference',()=>{
  assert.equal(head.material.colorWrite,false);assert.equal(head.material.depthWrite,true);assert.equal(head.visible,true);
  assert.ok(head.quaternion.angleTo(fit.quaternion)<1e-6);
  const i=168,actual=face.geometry.attributes.position.getZ(i);
- assert.ok(Math.abs(actual-fit.rotated[i].z*fit.metricScale)<1e-7,'mask depth is independent of unreliable normalized landmark z');
+ assert.ok(actual<fit.rotated[i].z*fit.metricScale,'nose proxy is set back to leave clearance for the bridge');
+ assert.ok(actual>fit.rotated[i].z*fit.metricScale-5*fit.metricScale,'clearance is bounded in canonical units');
+ assert.ok(head.position.z<fit.translation.z,'head depth margin preserves the near arm');
  head.geometry.computeBoundingBox();assert.ok(head.geometry.boundingBox.max.y>canonical[10][1],'mask extends above the facial surface');
  assert.ok(head.geometry.boundingBox.min.z<-8,'mask covers the back of the head');
  head.geometry.dispose();head.material.dispose();face.geometry.dispose();face.material.dispose();
@@ -56,4 +58,17 @@ test('near-side temple clearance does not change eye or nose depth',()=>{
  const o=observation(new THREE.Euler(0,1.3,0));const fit=estimateRigidFit(o.face,o.aspect,o.matrix,canonical);
  assert.ok(fit.occlusionDepths[127]<fit.rotated[127].z,'near-side depth proxy leaves clearance for the visible arm');
  for(const i of [33,133,168,263,362])assert.ok(Math.abs(fit.occlusionDepths[i]-fit.rotated[i].z)<1e-8);
+});
+
+test('short tracking interruptions retain pose but sustained loss cannot freeze an overlay',()=>{
+ const continuity=new PoseContinuity(),fit={id:'last pose'};
+ assert.equal(continuity.update(null,10).fit,null);
+ assert.deepEqual(continuity.update(fit,100),{fit,held:false});
+ assert.deepEqual(continuity.update(null,170),{fit,held:true});
+ assert.deepEqual(continuity.update(null,300),{fit,held:true});
+ assert.deepEqual(continuity.update(null,321),{fit:null,held:false});
+ assert.equal(continuity.update(null,322).fit,null,'missing frames must not extend the deadline');
+ const recovered={id:'new pose'};
+ assert.deepEqual(continuity.update(recovered,400),{fit:recovered,held:false});
+ continuity.reset();assert.equal(continuity.update(null,401).fit,null,'closing camera clears held pose');
 });

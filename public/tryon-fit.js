@@ -105,15 +105,15 @@ export function estimateRigidFit(face,aspect,matrix,canonical,previousQuaternion
     const clearanceX=x*(1-.16*side*rear);
     return elements[2]*clearanceX+elements[6]*y+elements[10]*z;
   });
-  return {position,quaternion,width:14*metricScale*scale,metricScale,translation,rotated,occlusionDepths};
+  return {position,quaternion,width:14*metricScale*scale,metricScale,translation,rotated,occlusionDepths,canonical};
 }
 
 export function createHeadOccluder() {
   const geometry=new THREE.SphereGeometry(1,32,24);
-  // Scalp/back-of-head volume. Leave the temples outside the narrow side radius,
-  // and keep the front surface behind the lens plane at canonical z=5.5.
-  geometry.scale(6.7,10,8);
-  geometry.translate(0,3,-4.5);
+  // Extend around the scalp/back so disconnected temple tips do not show
+  // through it. View-dependent depth clearance below preserves the near arm.
+  geometry.scale(7.8,10,10);
+  geometry.translate(0,3,-6);
   const material=new THREE.MeshBasicMaterial({colorWrite:false,depthWrite:true,depthTest:true,side:THREE.DoubleSide});
   const mesh=new THREE.Mesh(geometry,material);
   mesh.name='head-volume-depth-mask';mesh.renderOrder=-11;mesh.visible=false;
@@ -122,10 +122,35 @@ export function createHeadOccluder() {
 
 export function updateRigidOccluders(faceMesh,headMesh,face,aspect,fit) {
   const positions=faceMesh.geometry.attributes.position;
+  const turn=Math.abs(new THREE.Vector3(0,0,1).applyQuaternion(fit.quaternion).x);
   for(let i=0;i<positions.count;i++){
     const p=landmarkPoint(face[i],aspect);
-    positions.setXYZ(i,p.x,p.y,fit.occlusionDepths[i]*fit.metricScale+fit.translation.z);
+    // The proxy is not a scan of the wearer's skin. Set it back in camera
+    // depth, rather than moving the actual frame or disabling its depth test.
+    // Extra central clearance prevents the template nose cutting the bridge
+    // when nodding. Side-view clearance keeps the near temple outside the
+    // proxy while the opposite temple still lies behind the head.
+    const [x,y]=fit.canonical[i];
+    const nasal=(1-THREE.MathUtils.smoothstep(Math.abs(x),1.5,3))
+      *THREE.MathUtils.smoothstep(y,.5,1.6)
+      *(1-THREE.MathUtils.smoothstep(y,5,6));
+    const clearance=.3+1.5*turn+3*nasal;
+    positions.setXYZ(i,p.x,p.y,(fit.occlusionDepths[i]-clearance)*fit.metricScale+fit.translation.z);
   }
   positions.needsUpdate=true;faceMesh.visible=true;
-  headMesh.position.copy(fit.translation);headMesh.quaternion.copy(fit.quaternion);headMesh.scale.setScalar(fit.metricScale);headMesh.visible=true;
+  headMesh.position.copy(fit.translation);
+  headMesh.position.z-=(.5+3*turn)*fit.metricScale;
+  headMesh.quaternion.copy(fit.quaternion);headMesh.scale.setScalar(fit.metricScale);headMesh.visible=true;
+}
+
+// Brief detector misses must not flash the glasses off. Never retain a stale
+// pose indefinitely: a sustained loss still hides it and asks for a better view.
+export class PoseContinuity {
+  constructor(maxHoldMs=220){this.maxHoldMs=maxHoldMs;this.reset();}
+  reset(){this.fit=null;this.lastSeen=-Infinity;}
+  update(fit,now){
+    if(fit){this.fit=fit;this.lastSeen=now;return {fit,held:false};}
+    if(this.fit&&now-this.lastSeen<=this.maxHoldMs)return {fit:this.fit,held:true};
+    this.reset();return {fit:null,held:false};
+  }
 }
