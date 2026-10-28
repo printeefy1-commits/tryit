@@ -1,8 +1,12 @@
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {smoothLandmarks, createFaceOccluder, estimateRigidFit, createHeadOccluder, updateRigidOccluders, PoseContinuity} from './tryon-fit.js';
+import {smoothLandmarks, createFaceOccluder, createHeadOccluder, updateRigidOccluders, PoseContinuity} from './tryon-fit.js';
+import {estimatePerspectiveFit,trackingAlpha,CAMERA_FOV} from './tryon-perspective.js';
 import {FaceLandmarker,FilesetResolver} from '/vendor/vision/vision_bundle.mjs';
 import {aborted, waitFor, fetchBuffer, transferMessage} from './tryon-loading.js';
+import {CameraFrame} from './tryon-camera.js';
+import {prepareKnownMaterials} from './tryon-materials.js';
+import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 const $=s=>document.querySelector(s);const products=await fetch('/api/products').then(r=>r.json());
 const illustration='<svg viewBox="0 0 600 300" aria-hidden="true"><path d="M90 105 L25 65 M510 105 L575 65"/><path class="lenses" d="M65 110 Q150 65 255 110 L240 195 Q150 240 85 190 Z M345 110 Q450 65 535 110 L515 190 Q450 240 360 195 Z"/><path d="M255 120 Q300 95 345 120"/></svg>';
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -12,8 +16,10 @@ if(!products.length)$('#products').textContent='La collection arrive bientôt.';
 const dialog=$('#try-dialog'),video=$('#video'),canvas=$('#overlay');
 let selected,stream,landmarker,enginePromise,renderer,scene,camera,frame,model;
 let loadVersion=0,sessionVersion=0,busy=false,lastTime=-1;
-let faceOccluder=null,headOccluder=null,canonicalFace=null,poseQuaternion=null,filteredFace=null,lastTrackingTime=0;
+let faceOccluder=null,headOccluder=null,canonicalFace=null,previousPose=null,filteredFace=null,lastTrackingTime=0;
 let startupController=null,modelController=null,loadingMessage='';
+let cameraFrame=null;
+let lightingEnvironment=null;
 const poseContinuity=new PoseContinuity();
 const readyProducts=products.filter(p=>p.demo||p.model);
 for(const p of readyProducts)$('#model-select').add(new Option(p.name,p.id));
@@ -68,6 +74,7 @@ async function setModel(p) {
         throw error;
       }
       next=gltf.scene;
+      const opticalProfile=prepareKnownMaterials(gltf);
       const box=new THREE.Box3().setFromObject(next),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
       if(!size.x)throw new Error('Le modèle 3D est vide.');
       const fitting=gltf.asset?.extras?.lunetteCaba;
@@ -75,6 +82,7 @@ async function setModel(p) {
       next.position.sub(anchored?new THREE.Vector3(...fitting.anchor):center);
       const wrapper=new THREE.Group();wrapper.add(next);wrapper.scale.setScalar(1/(anchored?fitting.referenceWidth:size.x));
       const normalized=new THREE.Group();normalized.add(wrapper);next=normalized;
+      if(opticalProfile)next.userData.opticalProfile=opticalProfile;
     }
     if(!current())throw aborted();
     model=next;model.visible=false;scene.add(model);
@@ -106,7 +114,9 @@ function stop() {
   if(model){scene?.remove(model);dispose(model);model=null;}
   if(faceOccluder){dispose(faceOccluder);faceOccluder=null;}
   if(headOccluder){dispose(headOccluder);headOccluder=null;}
-  poseQuaternion=null;
+  cameraFrame?.dispose();cameraFrame=null;
+  lightingEnvironment?.dispose();lightingEnvironment=null;
+  previousPose=null;
   poseContinuity.reset();
   if(renderer){renderer.clear();renderer.dispose();renderer=null;}
   scene=null;camera=null;lastTime=-1;filteredFace=null;lastTrackingTime=0;loadingMessage='';busy=false;
@@ -177,7 +187,12 @@ $('#start-camera').onclick=async()=>{
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,preserveDrawingBuffer:true});
     renderer.setSize(canvas.width,canvas.height,false);
     scene=new THREE.Scene();const aspect=canvas.width/canvas.height;
-    camera=new THREE.OrthographicCamera(-aspect,aspect,1,-1,.01,100);camera.position.z=5;
+    const room=new RoomEnvironment(),generator=new THREE.PMREMGenerator(renderer);
+    lightingEnvironment=generator.fromScene(room,.04);scene.environment=lightingEnvironment.texture;
+    room.dispose();generator.dispose();
+    cameraFrame=new CameraFrame(canvas.width,canvas.height);
+    scene.background=cameraFrame.texture;
+    camera=new THREE.PerspectiveCamera(CAMERA_FOV,aspect,.1,500);
     faceOccluder=createFaceOccluder(topology.triangles);scene.add(faceOccluder);
     headOccluder=createHeadOccluder();scene.add(headOccluder);
     scene.add(new THREE.HemisphereLight(0xffffff,0x777777,3));
@@ -199,32 +214,34 @@ function tick() {
     if (video.currentTime !== lastTime) {
       lastTime = video.currentTime;
       const now = performance.now();
-      const result = landmarker.detectForVideo(video, now);
+      const image=cameraFrame.capture(video);
+      const result = landmarker.detectForVideo(image, now);
       const face = result.faceLandmarks?.[0];
       let fitted = false;
       let fit=null;
       if (face) {
         const dt = lastTrackingTime ? Math.min((now - lastTrackingTime) / 1000, 0.2) : 1;
-        filteredFace = smoothLandmarks(filteredFace, face, 1 - Math.exp(-dt / 0.055));
-        lastTrackingTime = now;
         const aspect = canvas.width / canvas.height;
-        const alpha=1-Math.exp(-dt/0.055);
+        const alpha=trackingAlpha(filteredFace,face,dt,aspect);
+        filteredFace=smoothLandmarks(filteredFace,face,alpha);
+        lastTrackingTime = now;
         const matrix=result.facialTransformationMatrixes?.[0];
-        fit=canonicalFace&&matrix?estimateRigidFit(filteredFace,aspect,matrix,canonicalFace,poseQuaternion,alpha,selected.scale,selected.offset,face):null;
-        if(fit)poseQuaternion=fit.quaternion.clone();
+        fit=canonicalFace&&matrix?estimatePerspectiveFit(face,aspect,matrix,canonicalFace,previousPose,alpha,selected.scale,selected.offset):null;
+        if(fit)previousPose=fit;
       }
       const tracking=poseContinuity.update(fit,now);
       if (model && tracking.fit) {
         model.visible = true;
         model.position.copy(tracking.fit.position);
         model.quaternion.copy(tracking.fit.quaternion);
-        model.scale.setScalar(tracking.fit.width);
+        const frameWidth=selected.frameWidthMm?selected.frameWidthMm/10:model.userData.opticalProfile?.frameWidthCm??14;
+        model.scale.setScalar(tracking.fit.width*frameWidth/14);
         if(!tracking.held)updateRigidOccluders(faceOccluder,headOccluder,filteredFace,canvas.width/canvas.height,fit);
         fitted = true;
       }
       if(!tracking.fit) {
         filteredFace = null;
-        poseQuaternion=null;
+        previousPose=null;
         lastTrackingTime = 0;
       }
       if (!fitted) {
@@ -236,7 +253,9 @@ function tick() {
       if(!loadingMessage)$('#try-status').textContent = fitted
         ? tracking.held ? 'Suivi momentanément incertain…' : 'Visage détecté · Essayez une autre monture ou prenez une photo.'
         : 'Visage insuffisamment visible · Regardez légèrement vers la caméra pour reprendre le suivi.';
-      renderer.render(scene, camera);
+      // A retained pose belongs to the previous image. Keep that complete
+      // composite briefly; never paint old glasses over a newer moving face.
+      if(!tracking.held)renderer.render(scene, camera);
     }
     frame = requestAnimationFrame(tick);
   } catch(e) {
@@ -244,4 +263,4 @@ function tick() {
     $('#try-status').textContent = 'Le suivi a été interrompu. Réactivez la caméra.';
   }
 }
-$('#snapshot').onclick=()=>{const photo=document.createElement('canvas');photo.width=canvas.width;photo.height=canvas.height;const ctx=photo.getContext('2d');ctx.translate(photo.width,0);ctx.scale(-1,1);ctx.drawImage(video,0,0);ctx.drawImage(canvas,0,0);photo.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='mon-essayage.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)},'image/png')};
+$('#snapshot').onclick=()=>{const photo=document.createElement('canvas');photo.width=canvas.width;photo.height=canvas.height;const ctx=photo.getContext('2d');ctx.translate(photo.width,0);ctx.scale(-1,1);ctx.drawImage(canvas,0,0);photo.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='mon-essayage.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)},'image/png')};

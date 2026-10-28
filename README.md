@@ -22,6 +22,8 @@ Le modèle Éclipse est une géométrie de démonstration générée dans le nav
 
 ## Ubuntu / EC2
 
+Pour l'installation existante du propriétaire (`~/tryit`, service `tryit`, IP élastique `16.192.70.157`) : `git pull --ff-only origin main` puis `sudo systemctl restart tryit`. Les étapes suivantes concernent une installation neuve avec d'autres chemins et noms de service.
+
 1. Installer Node.js 24 LTS et Nginx depuis leurs sources officielles. Copier le projet dans `/opt/atelier-vision`, installer avec `npm ci --omit=dev`, exécuter `bash scripts/setup-model.sh`.
 2. Créer un utilisateur système non privilégié `atelier`. Lui donner la propriété de `data/` et `uploads/`, et la lecture du projet.
 3. Créer `/etc/atelier-vision.env` (permissions 600), avec `ADMIN_PASSWORD` (unique et fort), `SESSION_SECRET` (aléatoire, au moins 32 caractères), `NODE_ENV=production`, `PORT=3000`. Ne pas partager ces valeurs dans le chat. Aucun mot de passe par défaut.
@@ -87,4 +89,6 @@ Si la caméra s'affiche sans lunettes, voir [les phases de chargement, les déla
 
 Pour les défauts de taille/décalage en tournant la tête ou les branches visibles au-dessus du front : [correction de la pose rigide et du volume crânien](docs/rigid-head-pose.md). La validation des mouvements réels du propriétaire reste nécessaire.
 
-Le contrôle `node scripts/occlusion-smoke.mjs` rend le vrai GLB sous douze positions et vérifie le pont et les branches par couverture de pixels. Les marges de profondeur, le maintien limité à 220 ms en cas de perte de suivi, l'ajustement latéral de l'angle et l'attache au nez sont décrits dans le même document.
+Le moteur actif utilise maintenant une caméra perspective et une optimisation de pose 3D, une image caméra figée commune à la détection et au rendu, et un lissage qui suit plus vite les mouvements. Le contrôle `node scripts/occlusion-smoke.mjs` rend le vrai GLB sous douze positions perspectives. `node scripts/materials-smoke.mjs` vérifie la séparation des matériaux du GLB HEAD connu. Les anciens calculs orthographiques restent documentés et testés comme références historiques.
+
+[Comparaison Ray‑Ban, moteur sans abonnement, tests et étapes de validation physique (arabe)](docs/rayban-comparison-ar.md). L'administration accepte une largeur extérieure totale optionnelle en millimètres ; une mesure ambiguë n'est pas appliquée automatiquement. La validation des mouvements réels et des dimensions du produit reste nécessaire.

@@ -19,7 +19,8 @@ try {
   const report=await page.evaluate(async()=>{
     const THREE=await import('three');
     const {GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
-    const {estimateRigidFit,createFaceOccluder,createHeadOccluder,updateRigidOccluders}=await import('/tryon-fit.js');
+    const {createFaceOccluder,createHeadOccluder,updateRigidOccluders}=await import('/tryon-fit.js');
+    const {estimatePerspectiveFit,projectCameraPoint,CAMERA_FOV}=await import('/tryon-perspective.js');
     const canonical=(await(await fetch('/models/canonical-face.json')).json()).vertices;
     const triangles=(await(await fetch('/models/face-topology.json')).json()).triangles;
     const gltf=await new GLTFLoader().loadAsync('/products/head-12028/head-12028-generated.glb');
@@ -46,7 +47,7 @@ try {
     });
     const scene=new THREE.Scene();scene.add(glasses);
     const faceMask=createFaceOccluder(triangles),headMask=createHeadOccluder();scene.add(faceMask,headMask);
-    const camera=new THREE.OrthographicCamera(-1,1,1,-1,.01,100);camera.position.z=5;
+    const camera=new THREE.PerspectiveCamera(CAMERA_FOV,1,.1,500);
     const renderer=new THREE.WebGLRenderer({antialias:false,alpha:true});renderer.setSize(480,480);
     const target=new THREE.WebGLRenderTarget(480,480);renderer.setRenderTarget(target);
     const pixels=new Uint8Array(480*480*4);
@@ -67,17 +68,19 @@ try {
       ['down-nose-variation',1,0,1.2],
       ['right-down',.6,.8],['left-down',.6,-.8],['right-up',-.6,.8],['left-up',-.6,-.8]
     ]){
-      const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch,yaw,0)),s=.065;
+      const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch,yaw,0));
+      const translation=new THREE.Vector3(0,0,-40);
       const face=canonical.map(([x,y,z])=>{
         // A wearer is not an exact canonical face. A plausible nasal-shape
         // variation exercises the mismatch between measured XY and proxy depth.
         const nasal=(1-THREE.MathUtils.smoothstep(Math.abs(x),1,3))*THREE.MathUtils.smoothstep(y,0,2)*(1-THREE.MathUtils.smoothstep(y,5,6));
-        const p=new THREE.Vector3(x,y,z+noseVariation*nasal).applyQuaternion(q).multiplyScalar(s);
-        return {x:.5+p.x/2,y:.5-p.y/2,z:0};
+        const p=new THREE.Vector3(x,y,z+noseVariation*nasal).applyQuaternion(q).add(translation);
+        return {...projectCameraPoint(p),z:0};
       });
       const reported=new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch,matrixYaw,0));
       const matrix={data:new THREE.Matrix4().makeRotationFromQuaternion(reported).toArray()};
-      const fit=estimateRigidFit(face,1,matrix,canonical);
+      const fit=estimatePerspectiveFit(face,1,matrix,canonical);
+      if(!fit)throw Error(name+': no perspective fit');
       // Geometry is already in canonical cm; production model uses the same
       // 14-cm nominal width and anchor through its normalized wrapper.
       glasses.position.copy(fit.translation);glasses.quaternion.copy(fit.quaternion);glasses.scale.setScalar(fit.metricScale);
@@ -92,7 +95,10 @@ try {
     near:Math.round(row.retained[row.near]*100)+'%',far:Math.round(row.retained[row.far]*100)+'%'})));
   if(!process.env.OCCLUSION_REPORT_ONLY){
     for(const row of report){
-      assert.ok(row.retained[0]>.85,`${row.name}: frame disappeared behind the proxy`);
+      // From below at 69°, a perspective view lets the nose cover more of the
+      // frame/bridge than an orthographic view. Lenses must remain visible;
+      // forcing the bridge in front of the nose would be an occlusion error.
+      assert.ok(row.retained[0]>(row.name==='up'?.8:.85),`${row.name}: frame disappeared behind the proxy`);
       if(row.name.startsWith('down'))assert.ok(row.retained[1]>.95,`${row.name}: bridge is cut by the nose proxy`);
       if(['right','left','right-biased','left-biased'].includes(row.name)){
         assert.ok(row.retained[row.near]>.9,`${row.name}: near arm is incomplete`);

@@ -9,3 +9,5 @@
 @media(max-width:360px){header nav{gap:9px;font-size:10px}.logo{gap:5px}}
 
 .product-art img.product-image--cover{object-fit:cover;object-position:50% 62%}
+
+.measurement-guide{display:block;width:100%;max-width:300px;height:auto;margin:8px 0}

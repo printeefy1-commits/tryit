@@ -196,7 +196,9 @@ export function updateRigidOccluders(faceMesh,headMesh,face,aspect,fit) {
       *THREE.MathUtils.smoothstep(y,.5,1.6)
       *(1-THREE.MathUtils.smoothstep(y,5,6));
     const clearance=.3+1.5*turn+3*nasal;
-    positions.setXYZ(i,p.x,p.y,(fit.occlusionDepths[i]-clearance)*fit.metricScale+fit.translation.z);
+    const depth=(fit.occlusionDepths[i]-clearance)*fit.metricScale+fit.translation.z;
+    const projection=fit.projection==='perspective'?-depth/fit.focal:1;
+    positions.setXYZ(i,p.x*projection,p.y*projection,depth);
   }
   positions.needsUpdate=true;faceMesh.visible=true;
   headMesh.position.copy(fit.translation);

@@ -20,16 +20,39 @@ if(process.env.TRACKING_DROPOUTS){
         const result=realPoseUpdate.call(this,fit,clock);
         globalThis.testPoseClockUsed=clock;return result;};`});
   });
+}
+if(process.env.TRACKING_DROPOUTS||process.env.FRAME_SYNC){
   // Only the test response is instrumented; no production tracking hooks.
   await page.route('**/vendor/vision/vision_bundle.mjs',async route=>{
     const response=await route.fetch(),source=await response.text();
     const name=source.match(/(\w+) as FaceLandmarker\b/)[1];
     await route.fulfill({response,body:source+`\nconst realDetect=${name}.prototype.detectForVideo;
-      ${name}.prototype.detectForVideo=function(...args){const result=realDetect.apply(this,args);
+      ${name}.prototype.detectForVideo=function(...args){
+      globalThis.testRawCameraFrame=args[0].toDataURL();
+      globalThis.testSourcePixel=Array.from(args[0].getContext('2d').getImageData(0,0,1,1).data);
+      if(globalThis.testSlowInference){const end=performance.now()+80;while(performance.now()<end){}}
+      const result=realDetect.apply(this,args);
       return globalThis.testHideLandmarks?{faceLandmarks:[],facialTransformationMatrixes:[]}:result;};`});
   });
 }
+if(process.env.FRAME_SYNC){
+  await page.route('**/app.js',async route=>{
+    const response=await route.fetch(),source=await response.text();
+    await route.fulfill({response,body:source.replace('renderer.render(scene, camera)',
+      '(renderer.render(scene, camera),globalThis.testSyncRecord(renderer))')});
+  });
+}
 await page.goto('http://127.0.0.1:3189');
+if(process.env.FRAME_SYNC){
+  await page.evaluate(()=>{
+    globalThis.testSyncSamples=[];globalThis.testSlowInference=true;
+    globalThis.testSyncRecord=renderer=>{
+      const pixel=new Uint8Array(4),gl=renderer.getContext();
+      gl.readPixels(0,renderer.domElement.height-1,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+      globalThis.testSyncSamples.push({expected:globalThis.testSourcePixel,actual:Array.from(pixel)});
+    };
+  });
+}
 await page.getByRole('button',{name:'Essayer sur mon visage'}).first().click();
 if(process.env.TRYON_PRODUCT_ID)await page.locator('#model-select').selectOption(process.env.TRYON_PRODUCT_ID);
 await page.getByRole('button',{name:'Activer la caméra'}).click();
@@ -38,25 +61,36 @@ assert.equal(await page.locator('#snapshot').isEnabled(),true);
 const downloadPromise=page.waitForEvent('download');await page.locator('#snapshot').click();const download=await downloadPromise;assert.equal(download.suggestedFilename(),'mon-essayage.png');await download.saveAs(process.env.CAMERA_SNAPSHOT||'/tmp/atelier-camera-snapshot.png');
 await page.screenshot({path:'/tmp/atelier-camera-ui.png'});
 if(process.env.TRACKING_DROPOUTS){
-  const alphaPixels=()=>{
-    const source=document.querySelector('#overlay'),image=new Image();
-    return new Promise(resolve=>{image.onload=()=>{const c=document.createElement('canvas');c.width=source.width;c.height=source.height;
-      const ctx=c.getContext('2d');ctx.drawImage(image,0,0);const p=ctx.getImageData(0,0,c.width,c.height).data;
-      let n=0;for(let i=3;i<p.length;i+=4)if(p[i])n++;resolve(n);};image.src=source.toDataURL();});
+  const glassesPixels=async()=>{
+    const source=document.querySelector('#overlay'),image=new Image(),raw=new Image();
+    image.src=source.toDataURL();raw.src=globalThis.testRawCameraFrame;await Promise.all([image.decode(),raw.decode()]);
+    const c=document.createElement('canvas');c.width=source.width;c.height=source.height;
+    const ctx=c.getContext('2d');ctx.drawImage(image,0,0);const p=ctx.getImageData(0,0,c.width,c.height).data;
+    ctx.drawImage(raw,0,0);const r=ctx.getImageData(0,0,c.width,c.height).data;
+    let n=0;for(let i=0;i<p.length;i+=4)if(Math.max(Math.abs(p[i]-r[i]),Math.abs(p[i+1]-r[i+1]),Math.abs(p[i+2]-r[i+2]))>25)n++;
+    return n;
   };
   await page.evaluate(()=>{globalThis.testPoseClock=1000;});
   await page.waitForFunction(()=>globalThis.testPoseClockUsed===1000&&document.querySelector('#try-status').textContent.startsWith('Visage détecté'));
   await page.evaluate(()=>{globalThis.testHideLandmarks=true;globalThis.testPoseClock=1100;});
   await page.waitForFunction(()=>document.querySelector('#try-status').textContent==='Suivi momentanément incertain…');
-  assert.ok(await page.evaluate(alphaPixels)>100,'brief loss retains the actual rendered glasses');
+  assert.ok(await page.evaluate(glassesPixels)>100,'brief loss retains the complete camera/glasses image');
   assert.equal(await page.locator('#snapshot').isEnabled(),false,'uncertain poses cannot be photographed');
   await page.evaluate(()=>{globalThis.testPoseClock=1500;});
   await page.waitForFunction(()=>document.querySelector('#try-status').textContent.startsWith('Visage insuffisamment visible'));
-  assert.equal(await page.evaluate(alphaPixels),0,'sustained loss clears the stale overlay');
+  assert.ok(await page.evaluate(glassesPixels)<10,'sustained loss leaves only the camera image');
   await page.evaluate(()=>{globalThis.testHideLandmarks=false;globalThis.testPoseClock=2000;});
   await page.waitForFunction(()=>document.querySelector('#try-status').textContent.startsWith('Visage détecté'));
   assert.ok(await page.locator('#snapshot').isEnabled());
   console.log('PASS: brief tracker loss retains glasses, sustained loss hides them with guidance, tracking recovers.');
+}
+if(process.env.FRAME_SYNC){
+  await page.waitForFunction(()=>globalThis.testSyncSamples.length>=8);
+  const samples=await page.evaluate(()=>globalThis.testSyncSamples);
+  assert.ok(new Set(samples.map(s=>s.expected.slice(0,3).join(','))).size>=2,'Use a fixture with a changing corner colour marker');
+  for(const {expected,actual} of samples)for(let i=0;i<4;i++)
+    assert.ok(Math.abs(expected[i]-actual[i])<=4,'background must match the exact inference input even with 80-ms inference delay');
+  console.log('PASS: changing camera frames and glasses render together from the exact frozen inference input.');
 }
 await page.getByRole('button',{name:'Fermer'}).click();await page.waitForFunction(()=>document.querySelector('#video').srcObject===null);
 assert.deepEqual(errors,[]);console.log('PASS: official face model loads, test face detected from simulated camera, snapshot downloads, camera stream stops on close.');

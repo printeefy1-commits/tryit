@@ -20,6 +20,8 @@ L'original n'est pas modifié et reste disponible dans la release. Le fichier ad
 
 La comparaison visuelle avant/après a été faite avec le même éclairage et les mêmes angles dans Chromium. Les réflexions et détails déjà présents dans la texture fournie sont conservés ; ils ne suivent pas nécessairement la lumière réelle de la caméra. Les verres font partie d'un maillage opaque unique, pas d'une simulation optique de lentilles séparées.
 
+Mise à jour du rendu : le binaire source reste inchangé. Le profil navigateur `tryon-materials.js`, limité à cette empreinte de source, sépare maintenant les triangles des verres et remplace les reflets peints par des matériaux estimés distincts pour l'acétate et les verres transparents. Leurs paramètres ne sont pas des propriétés optiques mesurées. Voir [la comparaison et les limites de la nouvelle version](rayban-comparison-ar.md). Aucune nouvelle migration du catalogue n'est nécessaire pour ce changement.
+
 ## Reproduction du traitement (machine d'authoring)
 
 Nécessite Blender 4.3, pas sur EC2 pour le simple déploiement :
