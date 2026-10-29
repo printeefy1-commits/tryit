@@ -190,9 +190,22 @@ async function startCamera(){
     const mobile=dialog.classList.contains('mobile-try'),portrait=innerHeight>=innerWidth;
     const pending=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',
       width:{ideal:mobile?(portrait?720:1280):960},height:{ideal:mobile?(portrait?1280:720):720},
-      aspectRatio:{ideal:mobile?(portrait?9/16:16/9):4/3}},audio:false});
+      ...(mobile?{resizeMode:{ideal:'none'}}:{aspectRatio:{ideal:4/3}})},audio:false});
     if(session!==sessionVersion||!dialog.open){pending.getTracks().forEach(t=>t.stop());return;}
-    stream=pending;video.srcObject=stream;
+    stream=pending;
+    if(mobile){
+      // Prefer the camera's widest supported view. Many front cameras do not
+      // expose zoom; a failed optional adjustment must not stop the preview.
+      try {
+        const track=pending.getVideoTracks()[0],zoom=track.getCapabilities?.().zoom;
+        if(zoom&&Number.isFinite(zoom.min)){
+          const current=track.getConstraints?.()||{};
+          await track.applyConstraints({...current,advanced:[...(current.advanced||[]),{zoom:zoom.min}]});
+        }
+      }catch{/* Keep the uncropped native stream when zoom is unavailable. */}
+      assertSession(session);
+    }
+    video.srcObject=stream;
     await waitFor(video.play(),15000,'La caméra ne fournit pas d’image. Fermez les autres applications caméra puis réessayez.',controller.signal);
     assertSession(session);
     phase('Chargement du suivi du visage…',true);
@@ -240,7 +253,7 @@ function resizeCameraDisplay(){
   if(!renderer||!video.videoWidth||!video.videoHeight)return;
   const stage=$('#camera-stage').getBoundingClientRect();
   const ratios=[stage.width/video.videoWidth,stage.height/video.videoHeight];
-  const displayRatio=dialog.classList.contains('mobile-try')?Math.max(...ratios):Math.min(...ratios);
+  const displayRatio=Math.min(...ratios);
   renderer.setPixelRatio(Math.min(1.5,Math.max(1,displayRatio*(window.devicePixelRatio||1))));
   renderer.setSize(video.videoWidth,video.videoHeight,false);
   if(camera){camera.aspect=canvas.width/canvas.height;camera.updateProjectionMatrix();}
@@ -313,11 +326,7 @@ function tick() {
   }
 }
 $('#snapshot').onclick=()=>{
-  const photo=document.createElement('canvas');let width=canvas.width,height=canvas.height;
-  if(dialog.classList.contains('mobile-try')){
-    const stage=$('#camera-stage').getBoundingClientRect(),aspect=stage.width/stage.height;
-    if(width/height>aspect)width=height*aspect;else height=width/aspect;
-  }
+  const photo=document.createElement('canvas'),width=canvas.width,height=canvas.height;
   photo.width=Math.max(1,Math.round(width));photo.height=Math.max(1,Math.round(height));
   const ctx=photo.getContext('2d');ctx.translate(photo.width,0);ctx.scale(-1,1);
   ctx.drawImage(canvas,(canvas.width-width)/2,(canvas.height-height)/2,width,height,0,0,photo.width,photo.height);

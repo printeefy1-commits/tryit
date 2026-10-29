@@ -16,7 +16,21 @@ try {
   const context=await browser.newContext({...options,permissions:['camera'],acceptDownloads:true});
   await context.addInitScript(()=>{
     const get=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-    navigator.mediaDevices.getUserMedia=(...args)=>{window.cameraRequests=(window.cameraRequests||0)+1;return get(...args);};
+    navigator.mediaDevices.getUserMedia=(...args)=>{
+      window.cameraRequests=(window.cameraRequests||0)+1;window.cameraConstraints=args[0];
+      return get(...args).then(stream=>{
+        // Simulate an exposed hardware zoom range without another camera
+        // request, verifying that the widest setting is actually requested.
+        const track=stream.getVideoTracks()[0],capabilities=track.getCapabilities.bind(track),apply=track.applyConstraints.bind(track);
+        track.getCapabilities=()=>({...capabilities(),zoom:{min:1,max:4,step:.1}});
+        track.applyConstraints=constraints=>{
+          window.zoomConstraint=constraints;
+          if(window.rejectZoom)return Promise.reject(new DOMException('Zoom unavailable','OverconstrainedError'));
+          return apply(constraints);
+        };
+        return stream;
+      });
+    };
   });
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:3201');
@@ -28,6 +42,11 @@ try {
   await page.locator('.product').nth(productIndex).getByRole('button').click();
   await page.waitForFunction(()=>document.querySelector('#try-status').textContent.startsWith('Visage détecté'),{},{timeout:60000});
   assert.equal(await page.evaluate(()=>window.cameraRequests),1,'one tap requests the camera once');
+  const constraints=await page.evaluate(()=>({camera:window.cameraConstraints.video,zoom:window.zoomConstraint}));
+  assert.equal(constraints.camera.resizeMode.ideal,'none');assert.equal(constraints.camera.aspectRatio,undefined,'do not force a sensor crop to the phone aspect ratio');
+  assert.equal(constraints.zoom.advanced[0].zoom,1,'request the minimum supported hardware zoom');
+  const resize=constraints.zoom.resizeMode;
+  assert.equal(typeof resize==='string'?resize:resize?.ideal,'none','setting hardware zoom must preserve the uncropped stream constraint');
   assert.ok(await page.locator('#start-camera').isHidden(),'activation button is absent in the automatic flow');
   async function checkViewport(){
     const result=await page.evaluate(()=>{
@@ -39,14 +58,16 @@ try {
     for(const r of [result.dialog,result.stage,result.video,result.canvas]){
       assert.ok(Math.abs(r.x)<1&&Math.abs(r.y)<1&&Math.abs(r.w-result.width)<2&&Math.abs(r.h-result.height)<2,'camera and AR canvas must cover the same viewport');
     }
-    assert.equal(result.fit,'cover');assert.ok(result.locked);
+    assert.equal(result.fit,'contain');assert.ok(result.locked);
+    assert.equal(await page.locator('#video').evaluate(v=>getComputedStyle(v).objectFit),'contain','video and AR use the same complete-frame view');
   }
   await checkViewport();
   await page.screenshot({path:'/tmp/tryit-mobile-camera-portrait.png'});
   const downloadPromise=page.waitForEvent('download');await page.locator('#snapshot').click();
   const download=await downloadPromise;await download.saveAs('/tmp/tryit-mobile-snapshot.png');
   const png=await fs.readFile('/tmp/tryit-mobile-snapshot.png');
-  assert.ok(Math.abs(png.readUInt32BE(16)/png.readUInt32BE(20)-390/844)<.005,'download matches the visible portrait crop');
+  const nativeAspect=await page.locator('#video').evaluate(v=>v.videoWidth/v.videoHeight);
+  assert.ok(Math.abs(png.readUInt32BE(16)/png.readUInt32BE(20)-nativeAspect)<.005,'download keeps the complete native camera frame');
   const alternative=await page.locator('#model-select').evaluate(select=>[...select.options].find(o=>o.value!==select.value)?.value);
   if(alternative){
     await page.locator('#model-select').selectOption(alternative);
@@ -58,6 +79,7 @@ try {
   await page.screenshot({path:'/tmp/tryit-mobile-camera-landscape.png'});
   await page.getByRole('button',{name:'Fermer',exact:true}).click();
   await page.waitForFunction(()=>!document.querySelector('#video').srcObject&&!document.body.classList.contains('try-open'));
+  await page.evaluate(()=>{window.rejectZoom=true;});
   await page.getByRole('button',{name:'Essayer sur mon visage'}).first().click();
   await page.waitForFunction(()=>window.cameraRequests===2&&document.querySelector('#video').srcObject);
   await page.getByRole('button',{name:'Fermer',exact:true}).click();
@@ -88,5 +110,5 @@ try {
   await latePage.waitForFunction(()=>window.stoppedCameras===1);
   assert.equal(await latePage.evaluate(()=>document.querySelector('#video').srcObject),null);
   await late.close();
-  console.log('PASS: mobile one-tap camera, viewport coverage, aligned AR crop, portrait snapshot, rotation, close/reopen, permission retry and late stream cleanup.');
+  console.log('PASS: mobile one-tap camera, uncropped full-frame view, minimum supported zoom, aligned AR, native-aspect snapshot, rotation, close/reopen, permission retry and late stream cleanup.');
 } finally {await browser?.close();child.kill();}

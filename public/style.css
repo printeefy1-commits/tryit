@@ -14,8 +14,8 @@
 
 body.try-open{overflow:hidden;overscroll-behavior:none}
 #try-info{margin-top:14px}#try-info summary{cursor:pointer;font-size:12px;color:var(--muted)}
-/* The video and composed canvas use the same cover crop. Safari can therefore
-   show an edge-to-edge camera with its AR overlay without native video mode. */
+/* Fit the complete camera frame and its AR overlay identically. Cropping a
+   landscape feed to a tall phone screen creates unwanted apparent zoom. */
 #try-dialog.mobile-try{position:fixed;inset:0;margin:0;padding:0;width:100%;max-width:none;height:100vh;height:100dvh;max-height:none;border-radius:0;overflow:hidden;background:#111;color:#fff}
 .mobile-try .dialog-head{position:absolute;inset:0 0 auto;z-index:4;align-items:center;padding:calc(env(safe-area-inset-top) + 10px) 16px 12px;background:linear-gradient(#000a,transparent)}
 .mobile-try .dialog-head .eyebrow{display:none}.mobile-try .dialog-head h2{font:20px Arial,sans-serif;margin:0;text-shadow:0 1px 4px #000}
@@ -26,7 +26,7 @@ body.try-open{overflow:hidden;overscroll-behavior:none}
 .mobile-try .try-layout::after{content:"";position:absolute;inset:45% 0 0;z-index:1;background:linear-gradient(transparent,#000c);pointer-events:none}
 .mobile-try .camera-panel{display:contents}
 .mobile-try #camera-stage{position:absolute;inset:0;z-index:0;aspect-ratio:auto!important;border-radius:0;background:#111}
-.mobile-try #video,.mobile-try #overlay{object-fit:cover}
+.mobile-try #video,.mobile-try #overlay{object-fit:contain}
 .mobile-try #camera-message{color:#fff;text-shadow:0 1px 4px #000;background:#0003;pointer-events:none}
 .mobile-try .model-controls{order:1;position:relative;z-index:2}
 .mobile-try .model-controls label{margin:0 0 4px;color:#fff;font-size:12px}

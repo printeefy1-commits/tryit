@@ -99,4 +99,4 @@ Le contrôle `node scripts/temple-visibility-smoke.mjs` vérifie la visibilité 
 
 Le rendu HEAD conserve les couleurs et détails du GLB fourni, avec des normales de verres lissées, une opacité plus proche du fichier de référence et un éclairage adouci. [Qualité visuelle, comparaison et limites (arabe)](docs/model-appearance-ar.md).
 
-Sur téléphone, «Essayer» ouvre une caméra qui remplit la fenêtre et demande directement l'autorisation. Les commandes restent superposées, la capture correspond au recadrage visible et la fermeture coupe la caméra. Sur ordinateur, le bouton d'activation reste disponible. [Expérience mobile et validation (arabe)](docs/mobile-tryon-ar.md).
+Sur téléphone, «Essayer» ouvre une caméra qui remplit la fenêtre et demande directement l'autorisation. Les commandes restent superposées, le champ complet de la caméra et la capture restent sans recadrage et la fermeture coupe la caméra. Sur ordinateur, le bouton d'activation reste disponible. [Expérience mobile et validation (arabe)](docs/mobile-tryon-ar.md).
