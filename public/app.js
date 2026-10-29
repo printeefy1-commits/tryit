@@ -16,6 +16,7 @@ $('#count').textContent=products.length+' monture'+(products.length>1?'s':'');
 for(const p of products){const card=document.createElement('article');card.className='product';card.innerHTML=`<div class="product-art">${p.image?`<img class="${p.imageFit==='cover'?'product-image--cover':''}" src="${escape(p.image)}" alt="${escape(p.name)}">`:illustration}<span class="badge">${p.demo?'MODÈLE DÉMO':p.estimatedDimensions?'MODÈLE APPROXIMATIF':p.model?'ESSAYAGE 3D':'BIENTÔT EN 3D'}</span></div><p class="brand">${escape(p.brand)}</p><h3>${escape(p.name)}</h3><button ${!p.demo&&!p.model?'disabled':''}>${p.demo||p.model?'Essayer sur mon visage':'Essai bientôt disponible'} <span>↗</span></button>`;card.querySelector('button').onclick=()=>openTry(p);$('#products').append(card)}
 if(!products.length)$('#products').textContent='La collection arrive bientôt.';
 const dialog=$('#try-dialog'),video=$('#video'),canvas=$('#overlay');
+const backdrop=$('#camera-backdrop'),backdropContext=backdrop.getContext('2d',{alpha:false});
 const mobileTry=matchMedia('(max-width:750px), (hover:none) and (pointer:coarse)');
 let selected,stream,landmarker,enginePromise,renderer,scene,camera,frame,model;
 let loadVersion=0,sessionVersion=0,busy=false,lastTime=-1;
@@ -133,6 +134,7 @@ function stop() {
   if(headOccluder){dispose(headOccluder);headOccluder=null;}
   if(earOccluders){dispose(earOccluders);earOccluders=null;}
   cameraFrame?.dispose();cameraFrame=null;
+  backdrop.width=backdrop.height=1;
   lightingEnvironment?.dispose();lightingEnvironment=null;
   previousPose=null;
   poseContinuity.reset();
@@ -208,6 +210,7 @@ async function startCamera(){
     video.srcObject=stream;
     await waitFor(video.play(),15000,'La caméra ne fournit pas d’image. Fermez les autres applications caméra puis réessayez.',controller.signal);
     assertSession(session);
+    updateCameraBackdrop(video);
     phase('Chargement du suivi du visage…',true);
     await getFaceEngine(controller.signal,session);
     assertSession(session);
@@ -260,6 +263,17 @@ function resizeCameraDisplay(){
 }
 window.addEventListener('resize',resizeCameraDisplay);
 window.visualViewport?.addEventListener('resize',resizeCameraDisplay);
+function updateCameraBackdrop(source){
+  if(!dialog.classList.contains('mobile-try')||!backdropContext)return;
+  const width=source.videoWidth||source.width,height=source.videoHeight||source.height;
+  if(!width||!height)return;
+  // A small copy is enough for a blurred surround. Keep it independent of
+  // detector resolution and use the exact captured frame after inference.
+  const scale=Math.min(1,320/Math.max(width,height));
+  const w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));
+  if(backdrop.width!==w||backdrop.height!==h){backdrop.width=w;backdrop.height=h;}
+  backdropContext.drawImage(source,0,0,w,h);
+}
 function tick() {
   if (!stream || !renderer) return;
   if(video.readyState<2||!video.videoWidth||!video.videoHeight){frame=requestAnimationFrame(tick);return;}
@@ -317,7 +331,7 @@ function tick() {
         : 'Visage insuffisamment visible · Regardez légèrement vers la caméra pour reprendre le suivi.';
       // A retained pose belongs to the previous image. Keep that complete
       // composite briefly; never paint old glasses over a newer moving face.
-      if(!tracking.held)renderer.render(scene, camera);
+      if(!tracking.held){renderer.render(scene, camera);updateCameraBackdrop(image);}
     }
     frame = requestAnimationFrame(tick);
   } catch(e) {

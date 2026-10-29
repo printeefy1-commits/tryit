@@ -51,7 +51,11 @@ try {
   async function checkViewport(){
     const result=await page.evaluate(()=>{
       const rect=id=>{const r=document.querySelector(id).getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};};
+      const backdrop=document.querySelector('#camera-backdrop'),style=getComputedStyle(backdrop);
+      const pixels=backdrop.getContext('2d').getImageData(0,0,backdrop.width,backdrop.height).data;
+      let coloured=0;for(let i=0;i<pixels.length;i+=4)if(Math.max(pixels[i],pixels[i+1],pixels[i+2])>30)coloured++;
       return {dialog:rect('dialog'),stage:rect('#camera-stage'),video:rect('#video'),canvas:rect('#overlay'),
+        backdrop:{...rect('#camera-backdrop'),width:backdrop.width,height:backdrop.height,display:style.display,fit:style.objectFit,filter:style.filter,coloured},
         width:innerWidth,height:innerHeight,fit:getComputedStyle(document.querySelector('#overlay')).objectFit,
         locked:document.body.classList.contains('try-open')};
     });
@@ -59,6 +63,11 @@ try {
       assert.ok(Math.abs(r.x)<1&&Math.abs(r.y)<1&&Math.abs(r.w-result.width)<2&&Math.abs(r.h-result.height)<2,'camera and AR canvas must cover the same viewport');
     }
     assert.equal(result.fit,'contain');assert.ok(result.locked);
+    const b=result.backdrop;
+    assert.equal(b.display,'block');assert.equal(b.fit,'cover');assert.match(b.filter,/blur\(24px\)/);
+    assert.ok(b.x<=0&&b.y<=0&&b.w>=result.width&&b.h>=result.height,'blurred camera surround fills the viewport');
+    assert.ok(Math.max(b.width,b.height)<=320&&Math.min(b.width,b.height)>1,'surround uses a small camera copy');
+    assert.ok(b.coloured>b.width*b.height*.1,'surround contains actual camera pixels');
     assert.equal(await page.locator('#video').evaluate(v=>getComputedStyle(v).objectFit),'contain','video and AR use the same complete-frame view');
   }
   await checkViewport();
@@ -79,6 +88,7 @@ try {
   await page.screenshot({path:'/tmp/tryit-mobile-camera-landscape.png'});
   await page.getByRole('button',{name:'Fermer',exact:true}).click();
   await page.waitForFunction(()=>!document.querySelector('#video').srcObject&&!document.body.classList.contains('try-open'));
+  assert.deepEqual(await page.locator('#camera-backdrop').evaluate(c=>[c.width,c.height]),[1,1],'closing releases the backdrop image');
   await page.evaluate(()=>{window.rejectZoom=true;});
   await page.getByRole('button',{name:'Essayer sur mon visage'}).first().click();
   await page.waitForFunction(()=>window.cameraRequests===2&&document.querySelector('#video').srcObject);
@@ -110,5 +120,5 @@ try {
   await latePage.waitForFunction(()=>window.stoppedCameras===1);
   assert.equal(await latePage.evaluate(()=>document.querySelector('#video').srcObject),null);
   await late.close();
-  console.log('PASS: mobile one-tap camera, uncropped full-frame view, minimum supported zoom, aligned AR, native-aspect snapshot, rotation, close/reopen, permission retry and late stream cleanup.');
+  console.log('PASS: mobile one-tap camera, uncropped view with live blurred surround, minimum supported zoom, aligned AR, native-aspect snapshot, rotation, close/reopen, permission retry and late stream cleanup.');
 } finally {await browser?.close();child.kill();}

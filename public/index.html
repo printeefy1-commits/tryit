@@ -7,7 +7,7 @@
 <dialog id="try-dialog" aria-labelledby="try-name">
 <div class="dialog-head"><div><p class="eyebrow">ESSAYAGE VIRTUEL</p><h2 id="try-name"></h2></div><button id="close-try" class="icon" aria-label="Fermer">✕</button></div>
 <div class="try-layout"><div class="camera-panel">
-<div id="camera-stage"><video id="video" autoplay muted playsinline></video><canvas id="overlay"></canvas><div id="camera-message">Activez la caméra pour découvrir votre monture.</div></div>
+<div id="camera-stage"><canvas id="camera-backdrop" aria-hidden="true"></canvas><video id="video" autoplay muted playsinline></video><canvas id="overlay"></canvas><div id="camera-message">Activez la caméra pour découvrir votre monture.</div></div>
 <div class="camera-controls"><p id="try-status" role="status">Les images restent sur votre appareil.</p><div class="actions"><button id="start-camera" class="button">Activer la caméra</button><button id="snapshot" disabled>Prendre une photo</button></div><p class="small try-disclaimer">Aperçu esthétique · Ne garantit pas le bon ajustement ni les dimensions réelles.</p></div>
 </div><aside class="model-controls"><label for="model-select">Changer de monture</label><select id="model-select"></select><details id="try-info" open><summary>À propos de cet essai</summary><p class="small">Placez votre visage face à la caméra, dans un endroit bien éclairé.</p><p id="model-note" class="small">Le modèle de démonstration est une illustration, pas une reproduction de vos produits.</p></details></aside></div></dialog>
 </body></html>
