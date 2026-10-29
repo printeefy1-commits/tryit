@@ -98,3 +98,5 @@ Les branches arrière du GLB HEAD connu sont relevées et légèrement ouvertes 
 Le contrôle `node scripts/temple-visibility-smoke.mjs` vérifie la visibilité continue des branches du GLB HEAD : après le premier masque rencontré, les fragments arrière restent cachés, tandis que la branche proche conserve sa route vers le support estimé de l’oreille.
 
 Le rendu HEAD conserve les couleurs et détails du GLB fourni, avec des normales de verres lissées, une opacité plus proche du fichier de référence et un éclairage adouci. [Qualité visuelle, comparaison et limites (arabe)](docs/model-appearance-ar.md).
+
+Sur téléphone, «Essayer» ouvre une caméra qui remplit la fenêtre et demande directement l'autorisation. Les commandes restent superposées, la capture correspond au recadrage visible et la fermeture coupe la caméra. Sur ordinateur, le bouton d'activation reste disponible. [Expérience mobile et validation (arabe)](docs/mobile-tryon-ar.md).

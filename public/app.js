@@ -16,6 +16,7 @@ $('#count').textContent=products.length+' monture'+(products.length>1?'s':'');
 for(const p of products){const card=document.createElement('article');card.className='product';card.innerHTML=`<div class="product-art">${p.image?`<img class="${p.imageFit==='cover'?'product-image--cover':''}" src="${escape(p.image)}" alt="${escape(p.name)}">`:illustration}<span class="badge">${p.demo?'MODÈLE DÉMO':p.estimatedDimensions?'MODÈLE APPROXIMATIF':p.model?'ESSAYAGE 3D':'BIENTÔT EN 3D'}</span></div><p class="brand">${escape(p.brand)}</p><h3>${escape(p.name)}</h3><button ${!p.demo&&!p.model?'disabled':''}>${p.demo||p.model?'Essayer sur mon visage':'Essai bientôt disponible'} <span>↗</span></button>`;card.querySelector('button').onclick=()=>openTry(p);$('#products').append(card)}
 if(!products.length)$('#products').textContent='La collection arrive bientôt.';
 const dialog=$('#try-dialog'),video=$('#video'),canvas=$('#overlay');
+const mobileTry=matchMedia('(max-width:750px), (hover:none) and (pointer:coarse)');
 let selected,stream,landmarker,enginePromise,renderer,scene,camera,frame,model;
 let loadVersion=0,sessionVersion=0,busy=false,lastTime=-1;
 let faceOccluder=null,headOccluder=null,earOccluders=null,canonicalFace=null,previousPose=null,filteredFace=null,lastTrackingTime=0;
@@ -102,12 +103,23 @@ async function setModel(p) {
 
 function openTry(p) {
   dialog.showModal();
+  document.body.classList.add('try-open');
+  applyTryMode();
   loadingMessage='';
   $('#camera-message').hidden=false;
   $('#camera-message').textContent='Activez la caméra pour découvrir votre monture.';
   $('#try-status').textContent='Les images restent sur votre appareil.';
   setModel(p).catch(failed);
+  // Start within the original tap, including on Safari. The browser still
+  // owns its permission prompt; closing invalidates a pending request.
+  if(mobileTry.matches)startCamera();
 }
+function applyTryMode(){
+  dialog.classList.toggle('mobile-try',mobileTry.matches);
+  $('#try-info').open=!mobileTry.matches;
+  $('#start-camera').hidden=mobileTry.matches&&(!!stream||busy);
+}
+mobileTry.addEventListener('change',()=>{if(dialog.open){applyTryMode();resizeCameraDisplay();}});
 $('#model-select').onchange=()=>setModel(readyProducts.find(p=>p.id===$('#model-select').value)).catch(failed);
 
 function stop() {
@@ -127,6 +139,7 @@ function stop() {
   if(renderer){renderer.clear();renderer.dispose();renderer=null;}
   scene=null;camera=null;lastTime=-1;filteredFace=null;lastTrackingTime=0;loadingMessage='';busy=false;
   $('#start-camera').disabled=false;$('#start-camera').textContent='Activer la caméra';
+  $('#start-camera').hidden=false;
   $('#model-select').disabled=false;$('#snapshot').disabled=true;
 }
 function failed(error) {
@@ -140,7 +153,7 @@ function failed(error) {
   $('#start-camera').textContent='Réessayer';
 }
 $('#close-try').onclick=()=>dialog.close();
-dialog.addEventListener('close',stop);
+dialog.addEventListener('close',()=>{if(!dialog.open){stop();document.body.classList.remove('try-open');}});
 window.addEventListener('pagehide',stop);
 
 async function getFaceEngine(signal,session) {
@@ -165,15 +178,19 @@ async function getFaceEngine(signal,session) {
   return waitFor(enginePromise,60000,'Le suivi du visage ne démarre pas. Vérifiez votre connexion puis réessayez.',signal);
 }
 
-$('#start-camera').onclick=async()=>{
+async function startCamera(){
   if(busy||stream)return;
   const session=++sessionVersion;
   const controller=new AbortController();startupController=controller;
   busy=true;$('#start-camera').disabled=true;$('#model-select').disabled=true;
+  $('#start-camera').hidden=dialog.classList.contains('mobile-try');
   phase('Autorisez l’accès à votre caméra…',true);
   try {
     if(!navigator.mediaDevices?.getUserMedia)throw new Error('HTTPS requis pour accéder à la caméra.');
-    const pending=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:960},height:{ideal:720}},audio:false});
+    const mobile=dialog.classList.contains('mobile-try'),portrait=innerHeight>=innerWidth;
+    const pending=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',
+      width:{ideal:mobile?(portrait?720:1280):960},height:{ideal:mobile?(portrait?1280:720):720},
+      aspectRatio:{ideal:mobile?(portrait?9/16:16/9):4/3}},audio:false});
     if(session!==sessionVersion||!dialog.open){pending.getTracks().forEach(t=>t.stop());return;}
     stream=pending;video.srcObject=stream;
     await waitFor(video.play(),15000,'La caméra ne fournit pas d’image. Fermez les autres applications caméra puis réessayez.',controller.signal);
@@ -193,9 +210,7 @@ $('#start-camera').onclick=async()=>{
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,preserveDrawingBuffer:true});
     // Sharper model edges on a large/high-DPI preview, without increasing the
     // camera frame sent to the face detector or unbounded mobile GPU work.
-    const displayRatio=$('#camera-stage').getBoundingClientRect().width/video.videoWidth;
-    renderer.setPixelRatio(Math.min(1.5,Math.max(1,displayRatio*(window.devicePixelRatio||1))));
-    renderer.setSize(video.videoWidth,video.videoHeight,false);
+    resizeCameraDisplay();
     scene=new THREE.Scene();const aspect=canvas.width/canvas.height;
     const room=new RoomEnvironment(),generator=new THREE.PMREMGenerator(renderer);
     lightingEnvironment=generator.fromScene(room,.04);scene.environment=lightingEnvironment.texture;
@@ -218,11 +233,29 @@ $('#start-camera').onclick=async()=>{
   } finally {
     if(session===sessionVersion){busy=false;$('#start-camera').disabled=!!stream;$('#model-select').disabled=false;}
   }
-};
+}
+$('#start-camera').onclick=startCamera;
+
+function resizeCameraDisplay(){
+  if(!renderer||!video.videoWidth||!video.videoHeight)return;
+  const stage=$('#camera-stage').getBoundingClientRect();
+  const ratios=[stage.width/video.videoWidth,stage.height/video.videoHeight];
+  const displayRatio=dialog.classList.contains('mobile-try')?Math.max(...ratios):Math.min(...ratios);
+  renderer.setPixelRatio(Math.min(1.5,Math.max(1,displayRatio*(window.devicePixelRatio||1))));
+  renderer.setSize(video.videoWidth,video.videoHeight,false);
+  if(camera){camera.aspect=canvas.width/canvas.height;camera.updateProjectionMatrix();}
+}
+window.addEventListener('resize',resizeCameraDisplay);
+window.visualViewport?.addEventListener('resize',resizeCameraDisplay);
 function tick() {
   if (!stream || !renderer) return;
+  if(video.readyState<2||!video.videoWidth||!video.videoHeight){frame=requestAnimationFrame(tick);return;}
   try {
     if (video.currentTime !== lastTime) {
+      if(cameraFrame.canvas.width!==video.videoWidth||cameraFrame.canvas.height!==video.videoHeight){
+        cameraFrame.dispose();cameraFrame=new CameraFrame(video.videoWidth,video.videoHeight);scene.background=cameraFrame.texture;
+        resizeCameraDisplay();filteredFace=null;previousPose=null;lastTrackingTime=0;poseContinuity.reset();
+      }
       lastTime = video.currentTime;
       const now = performance.now();
       const image=cameraFrame.capture(video);
@@ -279,4 +312,14 @@ function tick() {
     $('#try-status').textContent = 'Le suivi a été interrompu. Réactivez la caméra.';
   }
 }
-$('#snapshot').onclick=()=>{const photo=document.createElement('canvas');photo.width=canvas.width;photo.height=canvas.height;const ctx=photo.getContext('2d');ctx.translate(photo.width,0);ctx.scale(-1,1);ctx.drawImage(canvas,0,0);photo.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='mon-essayage.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)},'image/png')};
+$('#snapshot').onclick=()=>{
+  const photo=document.createElement('canvas');let width=canvas.width,height=canvas.height;
+  if(dialog.classList.contains('mobile-try')){
+    const stage=$('#camera-stage').getBoundingClientRect(),aspect=stage.width/stage.height;
+    if(width/height>aspect)width=height*aspect;else height=width/aspect;
+  }
+  photo.width=Math.max(1,Math.round(width));photo.height=Math.max(1,Math.round(height));
+  const ctx=photo.getContext('2d');ctx.translate(photo.width,0);ctx.scale(-1,1);
+  ctx.drawImage(canvas,(canvas.width-width)/2,(canvas.height-height)/2,width,height,0,0,photo.width,photo.height);
+  photo.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='mon-essayage.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)},'image/png');
+};
