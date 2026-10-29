@@ -3,13 +3,13 @@ import {spawn} from 'node:child_process';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 
-const child=spawn(process.execPath,['server.js'],{env:{...process.env,PORT:'3198',ADMIN_PASSWORD:crypto.randomBytes(20).toString('hex')},stdio:'pipe'});
+const child=spawn(process.execPath,['server.js'],{env:{...process.env,PORT:'3199',ADMIN_PASSWORD:crypto.randomBytes(20).toString('hex')},stdio:'pipe'});
 let browser;
 try {
   await new Promise((resolve,reject)=>{child.stdout.once('data',resolve);child.once('exit',()=>reject(Error('Server failed')));});
   browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,
     args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
-  const page=await browser.newPage();await page.goto('http://127.0.0.1:3198');
+  const page=await browser.newPage();await page.goto('http://127.0.0.1:3199');
   const report=await page.evaluate(async()=>{
     const THREE=await import('three'),{GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
     const {prepareKnownMaterials}=await import('/tryon-materials.js');
@@ -53,7 +53,7 @@ try {
   assert.ok(report.empty&&report.restored&&report.nearIntact&&report.repeatSame&&report.unknown);
   assert.ok(report.clipped>0&&report.clipped<report.full&&Number.isFinite(report.cutoff));
   assert.ok(report.reentry&&report.prefix,'a later exposed fragment must stay clipped after the first occlusion');
-  for(const r of report.integration)assert.ok(r.nearCutoff>=8,'near shaft must reach the upper-ear region before clipping');
+  for(const r of report.integration)assert.ok(r.nearCutoff>=10,'extended near shaft must reach the rearward upper-ear support before clipping');
   console.log('PASS: continuous temple prefix clips reappearing rear islands, preserves the opposite shaft, and restores the full arm when clear.');
   console.log(report);
 } finally {await browser?.close();child.kill();}

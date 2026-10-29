@@ -26,7 +26,7 @@ try {
     }
     const adjustment=prepareKnownTempleFit(gltf),after=mesh.geometry.attributes.position;
     const profile=gltf.asset.extras.lunetteCaba,anchor=new THREE.Vector3(...profile.anchor),scale=14/profile.referenceWidth;
-    let unchangedFront=true,unchangedFrontShading=true,maxLift=0,minLift=Infinity,maxSplay=0,minSplay=Infinity,zDrift=0;
+    let unchangedFront=true,unchangedFrontShading=true,maxLift=0,minLift=Infinity,maxSplay=0,minSplay=Infinity,maxExtension=0,minExtension=Infinity;
     const supportHeights=[];
     for(let i=0;i<after.count;i++){
       const before=new THREE.Vector3().fromArray(positions,i*3).applyMatrix4(mesh.matrixWorld).sub(anchor).multiplyScalar(scale).add(new THREE.Vector3(0,2.625,5.5));
@@ -39,7 +39,7 @@ try {
       maxLift=Math.max(maxLift,point.y-before.y);minLift=Math.min(minLift,point.y-before.y);
       const splay=Math.sign(before.x)*(point.x-before.x);
       maxSplay=Math.max(maxSplay,splay);minSplay=Math.min(minSplay,splay);
-      zDrift=Math.max(zDrift,Math.abs(point.z-before.z));
+      maxExtension=Math.max(maxExtension,before.z-point.z);minExtension=Math.min(minExtension,before.z-point.z);
       if(Math.abs(before.x)>5.5&&before.z> -5&&before.z< -4)supportHeights.push(point.y);
     }
     const repeat=prepareKnownTempleFit(gltf),unknown=prepareKnownTempleFit({asset:{extras:{}},scene:gltf.scene});
@@ -53,8 +53,8 @@ try {
       const fit={translation:new THREE.Vector3(0,0,-40),quaternion:new THREE.Quaternion().setFromEuler(new THREE.Euler(.1,-side*1,side*roll)),metricScale:1};
       updateEarOccluders(ears,fit);
       for(const [name,local,hidden] of [
-        ['hook behind ear',[side*7.2,2.8,-5.8],true],
-        ['shaft above ear',[side*6.9,4.85,-5.8],false],
+        ['hook behind ear',[side*7.2,2.8,-7.3],true],
+        ['shaft above ear',[side*6.9,4.85,-7.3],false],
         ['temple ahead of ear',[side*6.7,4.2,-2.7],false]
       ]){
         probe.position.set(...local).applyQuaternion(fit.quaternion).add(fit.translation);
@@ -64,11 +64,12 @@ try {
       }
     }
     renderer.dispose();target.dispose();
-    return {adjustment,unchangedFront,unchangedFrontShading,maxLift,minLift,maxSplay,minSplay,zDrift,preserved,repeat,unknown,
+    return {adjustment,unchangedFront,unchangedFrontShading,maxLift,minLift,maxSplay,minSplay,maxExtension,minExtension,preserved,repeat,unknown,
       minimumSupportHeight:Math.min(...supportHeights),probes};
   });
   assert.ok(report.adjustment?.movedVertices>1000);assert.ok(report.unchangedFront&&report.unchangedFrontShading&&report.preserved);
-  assert.ok(report.maxLift>1.3&&report.maxLift<1.351&&report.minLift> -1e-5&&report.zDrift<1e-5);
+  assert.ok(report.maxLift>1.3&&report.maxLift<1.351&&report.minLift> -1e-5);
+  assert.ok(report.maxExtension>1.49&&report.maxExtension<1.501&&report.minExtension> -1e-5,'straight run extends rearwards while the front stays fixed');
   assert.ok(report.maxSplay>.99&&report.maxSplay<1.001&&report.minSplay> -1e-5,'rear arms open outwards without moving their front hinges');
   assert.ok(report.minimumSupportHeight>4,'temple should approach the upper ear rather than its opening');
   assert.equal(report.repeat,null);assert.equal(report.unknown,null);

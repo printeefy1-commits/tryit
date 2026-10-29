@@ -4,7 +4,7 @@ const HEAD_SOURCE_SHA='20e5d272e646a7e33256a040568273de767d5d3d3cba2e8fe8c654382
 
 // MediaPipe's face mesh has no ear landmarks. These are deliberately labelled
 // template dimensions in canonical cm, not detected ear edges or measurements.
-export const EAR_TEMPLATE=Object.freeze({x:6.9,y:1.95,z:-5.8,radiusX:.65,radiusY:2.45,radiusZ:1.6});
+export const EAR_TEMPLATE=Object.freeze({x:6.9,y:1.95,z:-7.3,radiusX:.65,radiusY:2.45,radiusZ:1.6});
 
 export function createEarOccluders() {
   const ears=new THREE.Group();ears.name='estimated-ear-depth-masks';ears.visible=false;
@@ -64,7 +64,11 @@ export function prepareKnownTempleFit(gltf) {
       // rear splay opens them around the head, so mild turns do not hide the
       // whole near shaft behind the front rim. Hinges/lenses stay unchanged.
       const splay=THREE.MathUtils.smoothstep(4-z,0,5.5);
+      // Extend the straight run before the downward hook. Moving the whole
+      // frame would shift the lenses/nose; this smoothly adds rear reach only.
+      const extension=1.5*THREE.MathUtils.smoothstep(4-z,0,8);
       point.x+=Math.sign(x)*splay*sourcePerCm;
+      point.z-=extension*sourcePerCm;
       point.y+=lift*sourcePerCm;point.applyMatrix4(inverse);
       positions.setXYZ(i,point.x,point.y,point.z);movedFlags[i]=1;moved++;
     }
@@ -89,5 +93,5 @@ export function prepareKnownTempleFit(gltf) {
   });
   if(!movedVertices)return null;
   gltf.scene.userData.templeFitApplied=true;
-  return {estimated:true,maxLiftCm:1.35,maxSplayCm:1,movedVertices};
+  return {estimated:true,maxLiftCm:1.35,maxSplayCm:1,maxExtensionCm:1.5,movedVertices};
 }
