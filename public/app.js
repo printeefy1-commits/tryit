@@ -7,6 +7,7 @@ import {aborted, waitFor, fetchBuffer, transferMessage} from './tryon-loading.js
 import {CameraFrame} from './tryon-camera.js';
 import {prepareKnownMaterials} from './tryon-materials.js';
 import {createEarOccluders,updateEarOccluders,prepareKnownTempleFit} from './tryon-ears.js';
+import {prepareTempleVisibility,updateTempleVisibility} from './tryon-temple-visibility.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 const $=s=>document.querySelector(s);const products=await fetch('/api/products').then(r=>r.json());
 const illustration='<svg viewBox="0 0 600 300" aria-hidden="true"><path d="M90 105 L25 65 M510 105 L575 65"/><path class="lenses" d="M65 110 Q150 65 255 110 L240 195 Q150 240 85 190 Z M345 110 Q450 65 535 110 L515 190 Q450 240 360 195 Z"/><path d="M255 120 Q300 95 345 120"/></svg>';
@@ -77,6 +78,7 @@ async function setModel(p) {
       next=gltf.scene;
       const opticalProfile=prepareKnownMaterials(gltf);
       prepareKnownTempleFit(gltf);
+      const templeVisibility=prepareTempleVisibility(gltf);
       const box=new THREE.Box3().setFromObject(next),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
       if(!size.x)throw new Error('Le modèle 3D est vide.');
       const fitting=gltf.asset?.extras?.lunetteCaba;
@@ -85,6 +87,7 @@ async function setModel(p) {
       const wrapper=new THREE.Group();wrapper.add(next);wrapper.scale.setScalar(1/(anchored?fitting.referenceWidth:size.x));
       const normalized=new THREE.Group();normalized.add(wrapper);next=normalized;
       if(opticalProfile)next.userData.opticalProfile=opticalProfile;
+      if(templeVisibility)next.userData.templeVisibility=templeVisibility;
     }
     if(!current())throw aborted();
     model=next;model.visible=false;scene.add(model);
@@ -243,6 +246,7 @@ function tick() {
         if(!tracking.held){
           updateRigidOccluders(faceOccluder,headOccluder,filteredFace,canvas.width/canvas.height,fit);
           updateEarOccluders(earOccluders,fit);
+          updateTempleVisibility(model,[faceOccluder,headOccluder,earOccluders]);
         }
         fitted = true;
       }

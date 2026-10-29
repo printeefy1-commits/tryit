@@ -157,6 +157,9 @@ try {
         unmasked:nasalCoverage(face,fit,index,false),masked:nasalCoverage(face,fit,index,true)})):[];
       const scalpProbes=[];
       if(view.y>.55&&Math.abs(view.x)<.2)for(const side of [-1,1]){
+        // In an oblique bow the near shaft has an outside route to the ear;
+        // the far shaft must remain behind the scalp. Frontal bows hide both.
+        if(Math.abs(view.x)>.08&&side*view.x>0)continue;
         const local=[side*7.4,4.4,-4];
         scalpProbes.push({side,unmasked:surfaceVisibility(local,fit,false),masked:surfaceVisibility(local,fit,true)});
       }

@@ -196,6 +196,7 @@ export function createHeadOccluder() {
     if(covered)capIndices.push(...ids);
   }
   capGeometry.setIndex(capIndices);
+  capGeometry.userData={restPositions:capPositions.array.slice()};
   const cap=new THREE.Mesh(capGeometry,material.clone());
   cap.name='upper-scalp-depth-mask';cap.renderOrder=-11;cap.frustumCulled=false;
   mesh.add(cap);
@@ -249,6 +250,19 @@ export function updateRigidOccluders(faceMesh,headMesh,face,aspect,fit) {
   // The scalp is at its anatomical depth. Only the lower head proxy needs
   // the existing camera-depth setback that leaves room for the near temple.
   if(cap)cap.position.set(0,0,headMargin).applyQuaternion(fit.quaternion.clone().invert());
+  if(cap){
+    // Preserve the near shaft's route to the ear; the far scalp and crown
+    // retain full coverage. Clearance fades smoothly to zero in frontal bows.
+    const p=cap.geometry.attributes.position,rest=cap.geometry.userData.restPositions;
+    const lateral=THREE.MathUtils.smoothstep(turn,.04,.16);
+    for(let i=0;i<p.count;i++){
+      const x=rest[i*3],y=rest[i*3+1];
+      const near=THREE.MathUtils.smoothstep(x*view.x,0,1);
+      const band=1-THREE.MathUtils.smoothstep(y,8,10);
+      p.setX(i,x*(1-.2*lateral*near*band));
+    }
+    p.needsUpdate=true;cap.geometry.boundingSphere=null;
+  }
 }
 
 // Brief detector misses must not flash the glasses off. Never retain a stale
