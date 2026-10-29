@@ -186,12 +186,14 @@ export function createHeadOccluder() {
   // at ear height in a level side view. This remains an estimated head volume.
   const capGeometry=new THREE.SphereGeometry(1,32,20,0,Math.PI*2,0,Math.PI/2);
   capGeometry.scale(8.6,7.2,10);capGeometry.translate(0,5.8,-3.5);
-  // Only the lateral scalp needs the extra width. Leave the middle to the
-  // existing head/face proxies so a broad cap cannot cut the bridge on a bow.
+  // Leave a lower anterior opening for the bridge, while closing the rear
+  // and crown. An opening extending through the crown lets a distant bent
+  // temple tip reappear as an island on the forehead when bowing diagonally.
   const capIndices=[],capPositions=capGeometry.attributes.position;
   for(let i=0;i<capGeometry.index.count;i+=3){
     const ids=[0,1,2].map(j=>capGeometry.index.getX(i+j));
-    if(ids.every(j=>capPositions.getX(j)>4.5)||ids.every(j=>capPositions.getX(j)< -4.5))capIndices.push(...ids);
+    const covered=ids.every(j=>Math.abs(capPositions.getX(j))>4.5||capPositions.getZ(j)<2.5||capPositions.getY(j)>8.5);
+    if(covered)capIndices.push(...ids);
   }
   capGeometry.setIndex(capIndices);
   const cap=new THREE.Mesh(capGeometry,material.clone());

@@ -126,7 +126,9 @@ try {
       ['right-close-wide',.2,.45,0,.45,.4,1.15,-32],['left-close-wide',.2,-.45,0,-.45,-.4,1.15,-32],
       ['mild-off-centre-left',-.067,.159,0,.159,.55,1,-40,-8,-2],
       ['mild-off-centre-right',-.067,-.159,0,-.159,-.55,1,-40,8,-2],
-      ['bow-off-centre',.45,.08,0,.08,0,1,-38,-3,-7]
+      ['bow-off-centre',.45,.08,0,.08,0,1,-38,-3,-7],
+      ['bow-tip-left',.5,-.4,0,-.4,-.3,1,-38,0,-4],
+      ['bow-tip-right',.5,.4,0,.4,.3,1,-38,0,-4]
     ]){
       const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch,yaw,roll));
       const translation=new THREE.Vector3(tx,ty,depth);
@@ -156,6 +158,10 @@ try {
       const scalpProbes=[];
       if(view.y>.55&&Math.abs(view.x)<.2)for(const side of [-1,1]){
         const local=[side*7.4,4.4,-4];
+        scalpProbes.push({side,unmasked:surfaceVisibility(local,fit,false),masked:surfaceVisibility(local,fit,true)});
+      }
+      if(name.startsWith('bow-tip')){
+        const side=view.x<0?1:-1,local=[side*7,4,-5];
         scalpProbes.push({side,unmasked:surfaceVisibility(local,fit,false),masked:surfaceVisibility(local,fit,true)});
       }
       report.push({name,view:view.toArray(),reference,masked,faceOnly,headOnly,nasalProbes,scalpProbes,retained:masked.map((n,i)=>reference[i]?n/reference[i]:null),near:view.x<0?2:3,far:view.x<0?3:2});
