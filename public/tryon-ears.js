@@ -60,6 +60,11 @@ export function prepareKnownTempleFit(gltf) {
       const lift=.55*THREE.MathUtils.smoothstep(4-z,0,7)
         +.8*THREE.MathUtils.smoothstep(-2.5-z,0,3);
       if(lift<1e-6)continue;
+      // The generated arms also fold inward behind a wide front. A bounded
+      // rear splay opens them around the head, so mild turns do not hide the
+      // whole near shaft behind the front rim. Hinges/lenses stay unchanged.
+      const splay=THREE.MathUtils.smoothstep(4-z,0,5.5);
+      point.x+=Math.sign(x)*splay*sourcePerCm;
       point.y+=lift*sourcePerCm;point.applyMatrix4(inverse);
       positions.setXYZ(i,point.x,point.y,point.z);movedFlags[i]=1;moved++;
     }
@@ -84,5 +89,5 @@ export function prepareKnownTempleFit(gltf) {
   });
   if(!movedVertices)return null;
   gltf.scene.userData.templeFitApplied=true;
-  return {estimated:true,maxLiftCm:1.35,movedVertices};
+  return {estimated:true,maxLiftCm:1.35,maxSplayCm:1,movedVertices};
 }

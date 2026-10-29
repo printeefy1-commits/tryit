@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import * as THREE from 'three';
 import {estimatePerspectiveFit,projectCameraPoint,trackingAlpha} from '../public/tryon-perspective.js';
-import {createFaceOccluder,createHeadOccluder,updateRigidOccluders} from '../public/tryon-fit.js';
+import {createFaceOccluder,createHeadOccluder,updateRigidOccluders,cameraDirectionInHead} from '../public/tryon-fit.js';
 const canonical=JSON.parse(await fs.readFile(new URL('../public/models/canonical-face.json',import.meta.url))).vertices;
-function observation(euler,aspect=4/3,depth=-55){
- const q=new THREE.Quaternion().setFromEuler(euler),t=new THREE.Vector3(2,-1,depth);
+function observation(euler,aspect=4/3,depth=-55,tx=2,ty=-1){
+ const q=new THREE.Quaternion().setFromEuler(euler),t=new THREE.Vector3(tx,ty,depth);
  const face=canonical.map(v=>({...projectCameraPoint(new THREE.Vector3(...v).applyQuaternion(q).add(t),aspect),z:.8}));
  const matrix={data:new THREE.Matrix4().compose(t,q,new THREE.Vector3(1,1,1)).toArray()};
  return {q,t,face,matrix,aspect};
@@ -72,7 +72,7 @@ test('nose remains at skin depth on turns while the bridge keeps clearance on a 
  for(const euler of [new THREE.Euler(0,1,0),new THREE.Euler(0,-1,0),new THREE.Euler(.3,.45,.55)]){
   const o=observation(euler),fit=estimatePerspectiveFit(o.face,o.aspect,o.matrix,canonical);
   updateRigidOccluders(mesh,head,o.face,o.aspect,fit);
-  const view=new THREE.Vector3(0,0,1).applyQuaternion(fit.quaternion.clone().invert());
+  const view=cameraDirectionInHead(fit);
   for(const i of view.y<.25?[4,6,197]:[4]){
    const setback=fit.rotated[i].z+fit.translation.z-mesh.geometry.attributes.position.getZ(i);
    assert.ok(setback>=0&&setback<.15,'a surface behind the nose must not show through skin');
@@ -94,6 +94,21 @@ test('temple clearance follows the camera side in head space even when pitch and
   const near=view.x>0?356:127,far=view.x>0?127:356;
   const setback=i=>fit.rotated[i].z+fit.translation.z-mesh.geometry.attributes.position.getZ(i);
   assert.ok(setback(near)>setback(far)+3,'the near temple needs space without exposing the opposite arm');
+ }
+ mesh.geometry.dispose();mesh.material.dispose();head.geometry.dispose();head.material.dispose();
+});
+
+test('perspective temple clearance switches to the visible side as a turned head moves across the camera',()=>{
+ const mesh=createFaceOccluder([127,356,168]),head=createHeadOccluder();
+ for(const tx of [0,-12]){
+  const o=observation(new THREE.Euler(0,.16,0),4/3,-40,tx,0);
+  const fit=estimatePerspectiveFit(o.face,o.aspect,o.matrix,canonical);
+  updateRigidOccluders(mesh,head,o.face,o.aspect,fit);
+  const view=cameraDirectionInHead(fit),near=tx===0?127:356,far=tx===0?356:127;
+  assert.ok(tx===0?view.x<0:view.x>0,'the viewing side depends on camera position as well as head yaw');
+  const setback=i=>fit.rotated[i].z+fit.translation.z-mesh.geometry.attributes.position.getZ(i);
+  assert.ok(setback(near)>setback(far)+1,'side clearance must follow the actual perspective view');
+  assert.ok(fit.quaternion.angleTo(o.q)<.001,'moving across the camera must not invent extra head rotation');
  }
  mesh.geometry.dispose();mesh.material.dispose();head.geometry.dispose();head.material.dispose();
 });

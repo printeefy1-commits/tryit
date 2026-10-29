@@ -26,7 +26,7 @@ try {
     }
     const adjustment=prepareKnownTempleFit(gltf),after=mesh.geometry.attributes.position;
     const profile=gltf.asset.extras.lunetteCaba,anchor=new THREE.Vector3(...profile.anchor),scale=14/profile.referenceWidth;
-    let unchangedFront=true,unchangedFrontShading=true,maxLift=0,minLift=Infinity,xzDrift=0;
+    let unchangedFront=true,unchangedFrontShading=true,maxLift=0,minLift=Infinity,maxSplay=0,minSplay=Infinity,zDrift=0;
     const supportHeights=[];
     for(let i=0;i<after.count;i++){
       const before=new THREE.Vector3().fromArray(positions,i*3).applyMatrix4(mesh.matrixWorld).sub(anchor).multiplyScalar(scale).add(new THREE.Vector3(0,2.625,5.5));
@@ -37,7 +37,9 @@ try {
         for(let j=0;j<4;j++)unchangedFrontShading&&=tangents[i*4+j]===mesh.geometry.attributes.tangent.array[i*4+j];
       }
       maxLift=Math.max(maxLift,point.y-before.y);minLift=Math.min(minLift,point.y-before.y);
-      xzDrift=Math.max(xzDrift,Math.abs(point.x-before.x),Math.abs(point.z-before.z));
+      const splay=Math.sign(before.x)*(point.x-before.x);
+      maxSplay=Math.max(maxSplay,splay);minSplay=Math.min(minSplay,splay);
+      zDrift=Math.max(zDrift,Math.abs(point.z-before.z));
       if(Math.abs(before.x)>5.5&&before.z> -5&&before.z< -4)supportHeights.push(point.y);
     }
     const repeat=prepareKnownTempleFit(gltf),unknown=prepareKnownTempleFit({asset:{extras:{}},scene:gltf.scene});
@@ -51,7 +53,7 @@ try {
       const fit={translation:new THREE.Vector3(0,0,-40),quaternion:new THREE.Quaternion().setFromEuler(new THREE.Euler(.1,-side*1,side*roll)),metricScale:1};
       updateEarOccluders(ears,fit);
       for(const [name,local,hidden] of [
-        ['hook behind ear',[side*6.2,2.8,-5.8],true],
+        ['hook behind ear',[side*7.2,2.8,-5.8],true],
         ['shaft above ear',[side*6.9,4.85,-5.8],false],
         ['temple ahead of ear',[side*6.7,4.2,-2.7],false]
       ]){
@@ -62,17 +64,18 @@ try {
       }
     }
     renderer.dispose();target.dispose();
-    return {adjustment,unchangedFront,unchangedFrontShading,maxLift,minLift,xzDrift,preserved,repeat,unknown,
+    return {adjustment,unchangedFront,unchangedFrontShading,maxLift,minLift,maxSplay,minSplay,zDrift,preserved,repeat,unknown,
       minimumSupportHeight:Math.min(...supportHeights),probes};
   });
   assert.ok(report.adjustment?.movedVertices>1000);assert.ok(report.unchangedFront&&report.unchangedFrontShading&&report.preserved);
-  assert.ok(report.maxLift>1.3&&report.maxLift<1.351&&report.minLift> -1e-5&&report.xzDrift<1e-5);
+  assert.ok(report.maxLift>1.3&&report.maxLift<1.351&&report.minLift> -1e-5&&report.zDrift<1e-5);
+  assert.ok(report.maxSplay>.99&&report.maxSplay<1.001&&report.minSplay> -1e-5,'rear arms open outwards without moving their front hinges');
   assert.ok(report.minimumSupportHeight>4,'temple should approach the upper ear rather than its opening');
   assert.equal(report.repeat,null);assert.equal(report.unknown,null);
   for(const probe of report.probes){
     assert.ok(probe.unmasked,`${probe.name}: reference probe must be visible`);
     assert.equal(probe.masked,!probe.hidden,`${probe.name}, side ${probe.side}, roll ${probe.roll}: wrong ear occlusion`);
   }
-  console.log('PASS: rear temples rise toward the upper ear; front/lenses, UVs and materials stay intact; ear masks hide rear hooks and preserve shafts above/in front of ears on both sides.');
-  console.log({movedVertices:report.adjustment.movedVertices,maxLiftCm:report.maxLift,probes:report.probes.length});
+  console.log('PASS: rear temples rise and open around the head; front/lenses, UVs and materials stay intact; ear masks hide rear hooks and preserve shafts above/in front of ears on both sides.');
+  console.log({movedVertices:report.adjustment.movedVertices,maxLiftCm:report.maxLift,maxSplayCm:report.maxSplay,probes:report.probes.length});
 } finally {await browser?.close();child.kill();}

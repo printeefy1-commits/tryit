@@ -20,7 +20,7 @@ try {
   const report=await page.evaluate(async()=>{
     const THREE=await import('three');
     const {GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
-    const {createFaceOccluder,createHeadOccluder,updateRigidOccluders}=await import('/tryon-fit.js');
+    const {createFaceOccluder,createHeadOccluder,updateRigidOccluders,cameraDirectionInHead}=await import('/tryon-fit.js');
     const {createEarOccluders,updateEarOccluders,prepareKnownTempleFit}=await import('/tryon-ears.js');
     const {prepareKnownMaterials}=await import('/tryon-materials.js');
     const {estimatePerspectiveFit,projectCameraPoint,CAMERA_FOV}=await import('/tryon-perspective.js');
@@ -108,17 +108,28 @@ try {
       }
       return result;
     }
+    function surfaceVisibility(local,fit,masked){
+      probe.position.set(...local).applyQuaternion(fit.quaternion).multiplyScalar(fit.metricScale).add(fit.translation);
+      probe.visible=true;glasses.visible=false;faceMask.visible=headMask.visible=earMasks.visible=masked;
+      const screen=projectCameraPoint(probe.position),pixel=new Uint8Array(4);
+      renderer.render(scene,camera);
+      renderer.readRenderTargetPixels(target,Math.floor(screen.x*480),Math.floor((1-screen.y)*480),1,1,pixel);
+      probe.visible=false;glasses.visible=true;return pixel[3]>200;
+    }
     const report=[];
-    for(const [name,pitch,yaw,noseVariation=0,matrixYaw=yaw,roll=0,templeWidth=1,depth=-40] of [
+    for(const [name,pitch,yaw,noseVariation=0,matrixYaw=yaw,roll=0,templeWidth=1,depth=-40,tx=0,ty=0] of [
       ['front',0,0],['right',0,1],['left',0,-1],['down',1,0],['up',-1.2,0],
       ['right-biased',0,.96,0,.72],['left-biased',0,-.96,0,-.72],
       ['down-nose-variation',1,0,1.2],
       ['right-down',.6,.8],['left-down',.6,-.8],['right-up',-.6,.8],['left-up',-.6,-.8],
       ['right-roll',.3,.45,0,.45,.55],['left-roll',.3,-.45,0,-.45,-.55],
-      ['right-close-wide',.2,.45,0,.45,.4,1.15,-32],['left-close-wide',.2,-.45,0,-.45,-.4,1.15,-32]
+      ['right-close-wide',.2,.45,0,.45,.4,1.15,-32],['left-close-wide',.2,-.45,0,-.45,-.4,1.15,-32],
+      ['mild-off-centre-left',-.067,.159,0,.159,.55,1,-40,-8,-2],
+      ['mild-off-centre-right',-.067,-.159,0,-.159,-.55,1,-40,8,-2],
+      ['bow-off-centre',.45,.08,0,.08,0,1,-38,-3,-7]
     ]){
       const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch,yaw,roll));
-      const translation=new THREE.Vector3(0,0,depth);
+      const translation=new THREE.Vector3(tx,ty,depth);
       const face=canonical.map(([x,y,z])=>{
         // A wearer is not an exact canonical face. A plausible nasal-shape
         // variation exercises the mismatch between measured XY and proxy depth.
@@ -138,18 +149,23 @@ try {
       updateEarOccluders(earMasks,fit);
       const reference=coverage(false),masked=coverage(true);
       const faceOnly=coverage('face'),headOnly=coverage('head');
-      const view=new THREE.Vector3(0,0,1).applyQuaternion(fit.quaternion.clone().invert());
+      const view=cameraDirectionInHead(fit);
       const nasalIndices=view.y<.25?[4,6,197]:[4];
       const nasalProbes=templeWidth===1?nasalIndices.map(index=>({index,
         unmasked:nasalCoverage(face,fit,index,false),masked:nasalCoverage(face,fit,index,true)})):[];
-      report.push({name,reference,masked,faceOnly,headOnly,nasalProbes,retained:masked.map((n,i)=>reference[i]?n/reference[i]:null),near:yaw>0?2:3,far:yaw>0?3:2});
+      const scalpProbes=[];
+      if(view.y>.55&&Math.abs(view.x)<.2)for(const side of [-1,1]){
+        const local=[side*7.4,4.4,-4];
+        scalpProbes.push({side,unmasked:surfaceVisibility(local,fit,false),masked:surfaceVisibility(local,fit,true)});
+      }
+      report.push({name,view:view.toArray(),reference,masked,faceOnly,headOnly,nasalProbes,scalpProbes,retained:masked.map((n,i)=>reference[i]?n/reference[i]:null),near:view.x<0?2:3,far:view.x<0?3:2});
     }
     renderer.dispose();target.dispose();return report;
   });
   console.table(report.map(row=>({pose:row.name,
     frame:Math.round(row.retained[0]*100)+'%',bridge:Math.round(row.retained[1]*100)+'%',
     near:Math.round(row.retained[row.near]*100)+'%',far:Math.round(row.retained[row.far]*100)+'%'})));
-  if(process.env.OCCLUSION_REPORT_ONLY)console.log(JSON.stringify(report.filter(r=>r.name.includes('roll')||r.name.includes('wide')||r.nasalProbes.some(p=>p.masked)),null,2));
+  if(process.env.OCCLUSION_REPORT_ONLY)console.log(JSON.stringify(report.filter(r=>r.name.includes('roll')||r.name.includes('wide')||r.name.startsWith('mild')||r.scalpProbes.length||r.nasalProbes.some(p=>p.masked)),null,2));
   if(!process.env.OCCLUSION_REPORT_ONLY){
     for(const row of report){
       // From below at 69°, a perspective view lets the nose cover more of the
@@ -164,11 +180,18 @@ try {
         assert.ok(probe.unmasked,`${row.name}: nasal probe ${probe.index} is outside the view`);
         assert.equal(probe.masked,false,`${row.name}: surface behind the nose shows through skin at ${probe.index}`);
       }
+      for(const probe of row.scalpProbes){
+        assert.ok(probe.unmasked,`${row.name}: scalp reference is outside the view`);
+        assert.equal(probe.masked,false,`${row.name}: rear temple shows through the upper scalp on side ${probe.side}`);
+      }
+      if(row.name.startsWith('mild-off-centre'))assert.ok(row.masked[row.near]>25,`${row.name}: near shaft is hidden by the front rim`);
       if(row.name.startsWith('right')||row.name.startsWith('left')){
-        assert.ok(row.retained[row.near]>.9,`${row.name}: near arm is incomplete`);
+        // A raised rear shaft can legitimately be behind the scalp when seen
+        // from above; complete visibility is required in level side views.
+        if(row.view[1]<.3)assert.ok(row.retained[row.near]>.9,`${row.name}: near arm is incomplete`);
         if(['right','left','right-biased','left-biased'].includes(row.name))assert.ok(row.retained[row.far]<.08,`${row.name}: far arm shows through the head`);
       }
     }
-    console.log('PASS: nose hides surfaces behind it; frame survives pitch/yaw/roll, bridge survives bowing, visible near temples remain complete and far temples are hidden in profile.');
+    console.log('PASS: nose/scalp hide surfaces behind them, bowing preserves the bridge, level side views retain near shafts, and mild off-centre views show the opened temples.');
   }
 } finally {await browser?.close();child.kill();}

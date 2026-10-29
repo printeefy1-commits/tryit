@@ -181,14 +181,37 @@ export function createHeadOccluder() {
   const material=new THREE.MeshBasicMaterial({colorWrite:false,depthWrite:true,depthTest:true,side:THREE.DoubleSide});
   const mesh=new THREE.Mesh(geometry,material);
   mesh.name='head-volume-depth-mask';mesh.renderOrder=-11;mesh.visible=false;
+  // A narrow temple band must not imply a narrow scalp. The upper hemisphere
+  // hides temples seen through the forehead on a bow without covering a shaft
+  // at ear height in a level side view. This remains an estimated head volume.
+  const capGeometry=new THREE.SphereGeometry(1,32,20,0,Math.PI*2,0,Math.PI/2);
+  capGeometry.scale(8.6,7.2,10);capGeometry.translate(0,5.8,-3.5);
+  // Only the lateral scalp needs the extra width. Leave the middle to the
+  // existing head/face proxies so a broad cap cannot cut the bridge on a bow.
+  const capIndices=[],capPositions=capGeometry.attributes.position;
+  for(let i=0;i<capGeometry.index.count;i+=3){
+    const ids=[0,1,2].map(j=>capGeometry.index.getX(i+j));
+    if(ids.every(j=>capPositions.getX(j)>4.5)||ids.every(j=>capPositions.getX(j)< -4.5))capIndices.push(...ids);
+  }
+  capGeometry.setIndex(capIndices);
+  const cap=new THREE.Mesh(capGeometry,material.clone());
+  cap.name='upper-scalp-depth-mask';cap.renderOrder=-11;cap.frustumCulled=false;
+  mesh.add(cap);
   return mesh;
+}
+
+export function cameraDirectionInHead(fit) {
+  // In perspective an off-centre head does not look along the optical axis.
+  // Use the ray from the head origin to the camera, including its translation.
+  const direction=fit.projection==='perspective'?fit.translation.clone().negate().normalize():new THREE.Vector3(0,0,1);
+  return direction.applyQuaternion(fit.quaternion.clone().invert());
 }
 
 export function updateRigidOccluders(faceMesh,headMesh,face,aspect,fit) {
   const positions=faceMesh.geometry.attributes.position;
   // Camera direction in head coordinates also accounts for roll. World-space
   // forward.x alone can pick the wrong depth margin on a diagonal head tilt.
-  const view=new THREE.Vector3(0,0,1).applyQuaternion(fit.quaternion.clone().invert());
+  const view=cameraDirectionInHead(fit);
   const turn=Math.abs(view.x);
   const bow=THREE.MathUtils.smoothstep(view.y,.25,.65);
   for(let i=0;i<positions.count;i++){
@@ -217,8 +240,13 @@ export function updateRigidOccluders(faceMesh,headMesh,face,aspect,fit) {
   }
   positions.needsUpdate=true;faceMesh.visible=true;
   headMesh.position.copy(fit.translation);
-  headMesh.position.z-=(.5+3*turn)*fit.metricScale;
+  const headMargin=.5+3*turn;
+  headMesh.position.z-=headMargin*fit.metricScale;
   headMesh.quaternion.copy(fit.quaternion);headMesh.scale.setScalar(fit.metricScale);headMesh.visible=true;
+  const cap=headMesh.getObjectByName('upper-scalp-depth-mask');
+  // The scalp is at its anatomical depth. Only the lower head proxy needs
+  // the existing camera-depth setback that leaves room for the near temple.
+  if(cap)cap.position.set(0,0,headMargin).applyQuaternion(fit.quaternion.clone().invert());
 }
 
 // Brief detector misses must not flash the glasses off. Never retain a stale
