@@ -191,19 +191,23 @@ $('#start-camera').onclick=async()=>{
     $('#camera-stage').style.aspectRatio=canvas.width+'/'+canvas.height;
     phase('Initialisation de l’affichage 3D…',true);
     renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,preserveDrawingBuffer:true});
-    renderer.setSize(canvas.width,canvas.height,false);
+    // Sharper model edges on a large/high-DPI preview, without increasing the
+    // camera frame sent to the face detector or unbounded mobile GPU work.
+    const displayRatio=$('#camera-stage').getBoundingClientRect().width/video.videoWidth;
+    renderer.setPixelRatio(Math.min(1.5,Math.max(1,displayRatio*(window.devicePixelRatio||1))));
+    renderer.setSize(video.videoWidth,video.videoHeight,false);
     scene=new THREE.Scene();const aspect=canvas.width/canvas.height;
     const room=new RoomEnvironment(),generator=new THREE.PMREMGenerator(renderer);
     lightingEnvironment=generator.fromScene(room,.04);scene.environment=lightingEnvironment.texture;
     room.dispose();generator.dispose();
-    cameraFrame=new CameraFrame(canvas.width,canvas.height);
+    cameraFrame=new CameraFrame(video.videoWidth,video.videoHeight);
     scene.background=cameraFrame.texture;
     camera=new THREE.PerspectiveCamera(CAMERA_FOV,aspect,.1,500);
     faceOccluder=createFaceOccluder(topology.triangles);scene.add(faceOccluder);
     headOccluder=createHeadOccluder();scene.add(headOccluder);
     earOccluders=createEarOccluders();scene.add(earOccluders);
-    scene.add(new THREE.HemisphereLight(0xffffff,0x777777,3));
-    const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(0,2,5);scene.add(light);
+    scene.add(new THREE.HemisphereLight(0xffffff,0x777777,1));
+    const light=new THREE.DirectionalLight(0xffffff,.8);light.position.set(0,2,5);scene.add(light);
     // Tracking no longer waits for a large GLB to download and decode.
     tick();
     await setModel(selected);

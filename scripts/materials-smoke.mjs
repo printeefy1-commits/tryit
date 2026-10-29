@@ -14,6 +14,8 @@ try {
     const gltf=await new GLTFLoader().loadAsync('/products/head-12028/head-12028-generated.glb');
     let mesh;gltf.scene.traverse(o=>{if(o.isMesh)mesh=o;});
     const originalCount=mesh.geometry.index.count,positions=mesh.geometry.attributes.position.array.slice();
+    const sourceColour=mesh.material.map,sourceNormals=mesh.geometry.attributes.normal.array.slice();let sourceDisposed=false;
+    sourceColour.addEventListener('dispose',()=>{sourceDisposed=true;});
     const profile=prepareKnownMaterials(gltf);
     const unchanged=positions.every((v,i)=>v===mesh.geometry.attributes.position.array[i]);
     gltf.scene.updateMatrixWorld(true);
@@ -25,17 +27,26 @@ try {
     ray.set(new THREE.Vector3(0,.2,3),new THREE.Vector3(0,0,-1));
     const bridge=ray.intersectObject(gltf.scene,true)[0]?.face.materialIndex;
     const materials=mesh.material,unknown={asset:{extras:{}},scene:gltf.scene};
+    const normalMatrix=new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld),normal=new THREE.Vector3();
+    const lensGroup=mesh.geometry.groups[1];let minLensNormalZ=1;
+    for(let i=lensGroup.start;i<lensGroup.start+lensGroup.count;i++){
+      normal.fromBufferAttribute(mesh.geometry.attributes.normal,mesh.geometry.index.getX(i)).applyMatrix3(normalMatrix).normalize();
+      minLensNormalZ=Math.min(minLensNormalZ,normal.z);
+    }
     const unknownUntouched=prepareKnownMaterials(unknown)===null&&mesh.material===materials;
     const repeatUntouched=prepareKnownMaterials(gltf)===null&&mesh.material===materials;
     return {profile,originalCount,count:mesh.geometry.index.count,unchanged,hits,bridge,unknownUntouched,repeatUntouched,
       groups:mesh.geometry.groups,lensTransparent:materials[1].transparent,lensOpacity:materials[1].opacity,
-      noBakedLensMap:!materials[1].map&&!materials[1].normalMap,frameOpaque:!materials[0].transparent};
+      sourceColoursPreserved:materials[0].map===sourceColour&&materials[1].map===sourceColour&&!sourceDisposed,
+      frameNormalsPreserved:sourceNormals.every((v,i)=>v===mesh.geometry.attributes.normal.array[i]),minLensNormalZ,
+      noBakedNormalMaps:!materials[0].normalMap&&!materials[1].normalMap,frameOpaque:!materials[0].transparent};
   });
   assert.ok(report.profile);assert.equal(report.count,report.originalCount);assert.ok(report.unchanged);
   assert.equal(report.groups.reduce((n,g)=>n+g.count,0),report.count);
   assert.ok(report.hits.every(i=>i===1),'lens interiors must contain no opaque baked-reflection islands');
   assert.equal(report.bridge,0,'bridge stays opaque');
-  assert.ok(report.lensTransparent&&report.lensOpacity>0&&report.lensOpacity<1&&report.noBakedLensMap&&report.frameOpaque);
+  assert.ok(report.lensTransparent&&report.lensOpacity>=.9&&report.lensOpacity<1&&report.noBakedNormalMaps&&report.frameOpaque);
+  assert.ok(report.sourceColoursPreserved&&report.frameNormalsPreserved&&report.minLensNormalZ>.95,'keep original frame detail and use coherent smooth lens normals');
   assert.ok(report.unknownUntouched&&report.repeatUntouched);
   console.log('PASS: real model lens interiors are optical surfaces, bridge remains opaque, geometry/triangle count preserved, unrelated uploads unchanged.');
   console.log({lensTriangles:report.profile.lensTriangles,frameTriangles:report.profile.frameTriangles});

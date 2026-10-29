@@ -96,3 +96,5 @@ Les branches arrière du GLB HEAD connu sont relevées et légèrement ouvertes 
 [Comparaison Ray‑Ban, moteur sans abonnement, tests et étapes de validation physique (arabe)](docs/rayban-comparison-ar.md). L'administration accepte une largeur extérieure totale optionnelle en millimètres ; une mesure ambiguë n'est pas appliquée automatiquement. La validation des mouvements réels et des dimensions du produit reste nécessaire.
 
 Le contrôle `node scripts/temple-visibility-smoke.mjs` vérifie la visibilité continue des branches du GLB HEAD : après le premier masque rencontré, les fragments arrière restent cachés, tandis que la branche proche conserve sa route vers le support estimé de l’oreille.
+
+Le rendu HEAD conserve les couleurs et détails du GLB fourni, avec des normales de verres lissées, une opacité plus proche du fichier de référence et un éclairage adouci. [Qualité visuelle, comparaison et limites (arabe)](docs/model-appearance-ar.md).

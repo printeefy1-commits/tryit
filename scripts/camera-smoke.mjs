@@ -35,11 +35,20 @@ if(process.env.TRACKING_DROPOUTS||process.env.FRAME_SYNC){
       return globalThis.testHideLandmarks?{faceLandmarks:[],facialTransformationMatrixes:[]}:result;};`});
   });
 }
-if(process.env.FRAME_SYNC){
+if(process.env.FRAME_SYNC||process.env.TRACKING_DROPOUTS){
   await page.route('**/app.js',async route=>{
     const response=await route.fetch(),source=await response.text();
-    await route.fulfill({response,body:source.replace('renderer.render(scene, camera)',
-      '(renderer.render(scene, camera),globalThis.testSyncRecord(renderer))')});
+    let body=source;
+    if(process.env.TRACKING_DROPOUTS)body=body.replace('renderer.render(scene, camera)',`(()=>{
+      const visibility=scene.children.map(child=>child.visible);
+      scene.children.forEach(child=>{child.visible=false;});renderer.render(scene,camera);
+      globalThis.testRenderedCameraFrame=canvas.toDataURL();
+      scene.children.forEach((child,i)=>{child.visible=visibility[i];});
+      renderer.render(scene, camera);
+    })()`);
+    if(process.env.FRAME_SYNC)body=body.replace('renderer.render(scene, camera)',
+      '(renderer.render(scene, camera),globalThis.testSyncRecord(renderer))');
+    await route.fulfill({response,body});
   });
 }
 await page.goto('http://127.0.0.1:3189');
@@ -63,10 +72,10 @@ await page.screenshot({path:'/tmp/atelier-camera-ui.png'});
 if(process.env.TRACKING_DROPOUTS){
   const glassesPixels=async()=>{
     const source=document.querySelector('#overlay'),image=new Image(),raw=new Image();
-    image.src=source.toDataURL();raw.src=globalThis.testRawCameraFrame;await Promise.all([image.decode(),raw.decode()]);
+    image.src=source.toDataURL();raw.src=globalThis.testRenderedCameraFrame;await Promise.all([image.decode(),raw.decode()]);
     const c=document.createElement('canvas');c.width=source.width;c.height=source.height;
     const ctx=c.getContext('2d');ctx.drawImage(image,0,0);const p=ctx.getImageData(0,0,c.width,c.height).data;
-    ctx.drawImage(raw,0,0);const r=ctx.getImageData(0,0,c.width,c.height).data;
+    ctx.drawImage(raw,0,0,c.width,c.height);const r=ctx.getImageData(0,0,c.width,c.height).data;
     let n=0;for(let i=0;i<p.length;i+=4)if(Math.max(Math.abs(p[i]-r[i]),Math.abs(p[i+1]-r[i+1]),Math.abs(p[i+2]-r[i+2]))>25)n++;
     return n;
   };

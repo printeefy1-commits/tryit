@@ -10,16 +10,15 @@ function hull(points) {
   for(const p of sorted.slice().reverse()){while(upper.length>1&&cross(upper.at(-2),upper.at(-1),p)<=0)upper.pop();upper.push(p);}
   return lower.slice(0,-1).concat(upper.slice(0,-1));
 }
-function inside(point,polygon) {
+function inside(point,polygon,margin=0) {
   return polygon.length>=3&&polygon.every((a,i)=>{
-    const b=polygon[(i+1)%polygon.length];return (b.x-a.x)*(point.y-a.y)-(b.y-a.y)*(point.x-a.x)>=-1e-6;
+    const b=polygon[(i+1)%polygon.length];return (b.x-a.x)*(point.y-a.y)-(b.y-a.y)*(point.x-a.x)>=-1e-6-margin*Math.hypot(b.x-a.x,b.y-a.y);
   });
 }
 
-// This is a profile of the owner's known generated mesh, not a classifier for
-// arbitrary uploads. The fused AI asset has opaque photographed lens colours
-// and a baked normal map. Recover its lens triangles so camera pixels can show
-// through separate optical materials instead of a painted grey surface.
+// Profile of the owner's known generated mesh, not arbitrary uploads. Keep
+// its source colours/markings, separate its optical shading from the frame,
+// and replace noisy generated lens normals with a coherent curved surface.
 export function prepareKnownMaterials(gltf) {
   const profile=gltf.asset?.extras?.lunetteCaba;
   if(profile?.sourceSha256!==SOURCE_SHA)return null;
@@ -34,7 +33,7 @@ export function prepareKnownMaterials(gltf) {
     const context=textureCanvas.getContext('2d',{willReadFrequently:true});context.drawImage(image,0,0);
     const pixels=context.getImageData(0,0,image.width,image.height).data;
     const original=mesh.geometry,positions=original.attributes.position,uv=original.attributes.uv,index=original.index;
-    if(!uv||!index)return;
+    if(!uv||!index||!original.attributes.normal)return;
     const frame=[],lenses=[],seeds=[new Set(),new Set()],triangles=[];
     const data=i=>{
       point.fromBufferAttribute(positions,i).applyMatrix4(mesh.matrixWorld).sub(anchor).multiplyScalar(14/profile.referenceWidth);
@@ -55,7 +54,8 @@ export function prepareKnownMaterials(gltf) {
     // alpha threshold alone leaves opaque islands in the middle of a lens.
     const outlines=seeds.map(ids=>hull([...ids].map(i=>vertices[i].point)));
     for(const {ids,center} of triangles){
-      const lens=aperture(center)&&inside(center,outlines[center.x<0?0:1]);
+      const outline=outlines[center.x<0?0:1],bright=ids.reduce((sum,i)=>sum+vertices[i].light,0)/3>32;
+      const lens=aperture(center)&&(inside(center,outline)||(bright&&inside(center,outline,.08)));
       (lens?lenses:frame).push(...ids);
     }
     // Reject a wrong profile instead of silently replacing an entire frame.
@@ -63,20 +63,38 @@ export function prepareKnownMaterials(gltf) {
     if(fraction<.1||fraction>.8)return;
     lensTriangles+=lenses.length/3;frameTriangles+=frame.length/3;
     for(const ids of seeds)for(const id of ids)bounds[vertices[id].point.x<0?0:1].expandByPoint(vertices[id].point);
-    const geometry=original.clone();geometry.setIndex([...frame,...lenses]);geometry.clearGroups();
+    // Give optical vertices their own normals. Sharing a rim vertex with a
+    // noisy generated lens changes the rim shading or leaves faceted patches.
+    const geometry=original.clone(),lensIds=[...new Set(lenses)],duplicates=new Map(lensIds.map((id,i)=>[id,positions.count+i]));
+    for(const [name,attribute] of Object.entries(original.attributes)){
+      const values=new attribute.array.constructor((attribute.count+lensIds.length)*attribute.itemSize);
+      values.set(attribute.array);
+      lensIds.forEach((id,i)=>{for(let j=0;j<attribute.itemSize;j++)values[(attribute.count+i)*attribute.itemSize+j]=attribute.array[id*attribute.itemSize+j];});
+      geometry.setAttribute(name,new THREE.BufferAttribute(values,attribute.itemSize,attribute.normalized));
+    }
+    const normalMatrix=new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld),inverseNormal=normalMatrix.clone().invert();
+    const centres=outlines.map(points=>new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3()));
+    for(const id of lensIds){
+      const p=vertices[id].point,centre=centres[p.x<0?0:1];
+      const normal=new THREE.Vector3((p.x-centre.x)*.035,(p.y-centre.y)*.035,1)
+        .applyMatrix3(inverseNormal).normalize();
+      geometry.attributes.normal.setXYZ(duplicates.get(id),normal.x,normal.y,normal.z);
+    }
+    geometry.setIndex([...frame,...lenses.map(id=>duplicates.get(id))]);geometry.clearGroups();
     geometry.addGroup(0,frame.length,0);geometry.addGroup(frame.length,lenses.length,1);
+    const sourceColour=mesh.material.map;
     const frameMaterial=new THREE.MeshPhysicalMaterial({
-      name:'HEAD 12028 — estimated navy acetate, no baked AI highlights',color:0x101b28,
-      metalness:.02,roughness:.24,clearcoat:1,clearcoatRoughness:.12,envMapIntensity:.65
+      name:'HEAD 12028 — original frame colour and markings',color:mesh.material.color.clone(),map:sourceColour,
+      metalness:0,roughness:.55,clearcoat:.1,clearcoatRoughness:.4,envMapIntensity:.3
     });
     const lensMaterial=new THREE.MeshPhysicalMaterial({
-      name:'HEAD 12028 — separate estimated blue-grey optical surface',color:0x22333c,
-      metalness:0,roughness:.12,clearcoat:1,clearcoatRoughness:.08,
-      transparent:true,opacity:.68,depthWrite:false,side:THREE.FrontSide,envMapIntensity:.45
+      name:'HEAD 12028 — original lens colour with smooth optical normals',color:mesh.material.color.clone(),map:sourceColour,
+      metalness:0,roughness:.18,clearcoat:.8,clearcoatRoughness:.16,
+      transparent:true,opacity:.96,depthWrite:false,side:THREE.FrontSide,envMapIntensity:.35
     });
     mesh.geometry=geometry;const oldMaterial=mesh.material;mesh.material=[frameMaterial,lensMaterial];
     original.dispose();
-    for(const value of Object.values(oldMaterial))if(value?.isTexture)value.dispose();
+    for(const value of Object.values(oldMaterial))if(value?.isTexture&&value!==sourceColour)value.dispose();
     oldMaterial.dispose();
     textureCanvas.width=textureCanvas.height=1;
   });
