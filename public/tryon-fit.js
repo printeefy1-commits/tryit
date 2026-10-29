@@ -173,7 +173,10 @@ export function createHeadOccluder() {
   const geometry=new THREE.SphereGeometry(1,32,24);
   // Extend around the scalp/back so disconnected temple tips do not show
   // through it. View-dependent depth clearance below preserves the near arm.
-  geometry.scale(7.8,10,10);
+  // The facial template is widest at the cheekbones, not the cranium. Using
+  // that full width for the scalp buries the near temple before it reaches the
+  // ear, especially when a turn is combined with roll.
+  geometry.scale(6.5,10,10);
   geometry.translate(0,3,-6);
   const material=new THREE.MeshBasicMaterial({colorWrite:false,depthWrite:true,depthTest:true,side:THREE.DoubleSide});
   const mesh=new THREE.Mesh(geometry,material);
@@ -183,19 +186,31 @@ export function createHeadOccluder() {
 
 export function updateRigidOccluders(faceMesh,headMesh,face,aspect,fit) {
   const positions=faceMesh.geometry.attributes.position;
-  const turn=Math.abs(new THREE.Vector3(0,0,1).applyQuaternion(fit.quaternion).x);
+  // Camera direction in head coordinates also accounts for roll. World-space
+  // forward.x alone can pick the wrong depth margin on a diagonal head tilt.
+  const view=new THREE.Vector3(0,0,1).applyQuaternion(fit.quaternion.clone().invert());
+  const turn=Math.abs(view.x);
+  const bow=THREE.MathUtils.smoothstep(view.y,.25,.65);
   for(let i=0;i<positions.count;i++){
     const p=landmarkPoint(face[i],aspect);
-    // The proxy is not a scan of the wearer's skin. Set it back in camera
-    // depth, rather than moving the actual frame or disabling its depth test.
-    // Extra central clearance prevents the template nose cutting the bridge
-    // when nodding. Side-view clearance keeps the near temple outside the
-    // proxy while the opposite temple still lies behind the head.
-    const [x,y]=fit.canonical[i];
-    const nasal=(1-THREE.MathUtils.smoothstep(Math.abs(x),1.5,3))
-      *THREE.MathUtils.smoothstep(y,.5,1.6)
+    // A single setback for the whole face makes glasses show through the
+    // nose, while still cutting off a near arm against the temple. Give those
+    // two anatomical regions independent depth margins. Keep the nose tip and
+    // ridge at skin depth; reserve bridge clearance only at the root on a bow.
+    const [x,y,z]=fit.canonical[i];
+    const nasal=(1-THREE.MathUtils.smoothstep(Math.abs(x),1.3,2.3))
+      *THREE.MathUtils.smoothstep(y,-2.5,-.5)
+      *(1-THREE.MathUtils.smoothstep(y,3.8,5));
+    const root=THREE.MathUtils.smoothstep(y,.5,1.6);
+    const bowedRoot=(1-THREE.MathUtils.smoothstep(Math.abs(x),1.5,3))*root
       *(1-THREE.MathUtils.smoothstep(y,5,6));
-    const clearance=.3+1.5*turn+3*nasal;
+    const nearTemple=THREE.MathUtils.smoothstep(x*view.x,.3,1.5)
+      *THREE.MathUtils.smoothstep(Math.abs(x),2.5,4.5)
+      *THREE.MathUtils.smoothstep(5-z,0,3)
+      *THREE.MathUtils.smoothstep(y,.5,1.8)
+      *(1-THREE.MathUtils.smoothstep(y,5,7));
+    const clearance=THREE.MathUtils.lerp(.3+1.5*turn,.08+.22*bow*root,nasal)
+      +3*bow*bowedRoot+5*nearTemple;
     const depth=(fit.occlusionDepths[i]-clearance)*fit.metricScale+fit.translation.z;
     const projection=fit.projection==='perspective'?-depth/fit.focal:1;
     positions.setXYZ(i,p.x*projection,p.y*projection,depth);

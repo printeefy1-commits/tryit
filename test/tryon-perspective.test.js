@@ -66,3 +66,34 @@ test('moving a perspective depth proxy backwards preserves the observed face sil
  }
  mesh.geometry.dispose();mesh.material.dispose();head.geometry.dispose();head.material.dispose();
 });
+
+test('nose remains at skin depth on turns while the bridge keeps clearance on a bow',()=>{
+ const mesh=createFaceOccluder([4,6,197]),head=createHeadOccluder();
+ for(const euler of [new THREE.Euler(0,1,0),new THREE.Euler(0,-1,0),new THREE.Euler(.3,.45,.55)]){
+  const o=observation(euler),fit=estimatePerspectiveFit(o.face,o.aspect,o.matrix,canonical);
+  updateRigidOccluders(mesh,head,o.face,o.aspect,fit);
+  const view=new THREE.Vector3(0,0,1).applyQuaternion(fit.quaternion.clone().invert());
+  for(const i of view.y<.25?[4,6,197]:[4]){
+   const setback=fit.rotated[i].z+fit.translation.z-mesh.geometry.attributes.position.getZ(i);
+   assert.ok(setback>=0&&setback<.15,'a surface behind the nose must not show through skin');
+  }
+ }
+ const o=observation(new THREE.Euler(1,0,0)),fit=estimatePerspectiveFit(o.face,o.aspect,o.matrix,canonical);
+ updateRigidOccluders(mesh,head,o.face,o.aspect,fit);
+ assert.ok(fit.rotated[168].z+fit.translation.z-mesh.geometry.attributes.position.getZ(168)>2,'bowing retains root clearance');
+ mesh.geometry.dispose();mesh.material.dispose();head.geometry.dispose();head.material.dispose();
+});
+
+test('temple clearance follows the camera side in head space even when pitch and roll reverse it',()=>{
+ const mesh=createFaceOccluder([127,356,168]),head=createHeadOccluder();
+ for(const direction of [-1,1]){
+  const o=observation(new THREE.Euler(.8,direction*.6,direction*1.2));
+  const fit=estimatePerspectiveFit(o.face,o.aspect,o.matrix,canonical);
+  updateRigidOccluders(mesh,head,o.face,o.aspect,fit);
+  const view=new THREE.Vector3(0,0,1).applyQuaternion(fit.quaternion.clone().invert());
+  const near=view.x>0?356:127,far=view.x>0?127:356;
+  const setback=i=>fit.rotated[i].z+fit.translation.z-mesh.geometry.attributes.position.getZ(i);
+  assert.ok(setback(near)>setback(far)+3,'the near temple needs space without exposing the opposite arm');
+ }
+ mesh.geometry.dispose();mesh.material.dispose();head.geometry.dispose();head.material.dispose();
+});
