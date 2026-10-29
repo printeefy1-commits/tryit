@@ -6,6 +6,7 @@ import {FaceLandmarker,FilesetResolver} from '/vendor/vision/vision_bundle.mjs';
 import {aborted, waitFor, fetchBuffer, transferMessage} from './tryon-loading.js';
 import {CameraFrame} from './tryon-camera.js';
 import {prepareKnownMaterials} from './tryon-materials.js';
+import {createEarOccluders,updateEarOccluders,prepareKnownTempleFit} from './tryon-ears.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 const $=s=>document.querySelector(s);const products=await fetch('/api/products').then(r=>r.json());
 const illustration='<svg viewBox="0 0 600 300" aria-hidden="true"><path d="M90 105 L25 65 M510 105 L575 65"/><path class="lenses" d="M65 110 Q150 65 255 110 L240 195 Q150 240 85 190 Z M345 110 Q450 65 535 110 L515 190 Q450 240 360 195 Z"/><path d="M255 120 Q300 95 345 120"/></svg>';
@@ -16,7 +17,7 @@ if(!products.length)$('#products').textContent='La collection arrive bientôt.';
 const dialog=$('#try-dialog'),video=$('#video'),canvas=$('#overlay');
 let selected,stream,landmarker,enginePromise,renderer,scene,camera,frame,model;
 let loadVersion=0,sessionVersion=0,busy=false,lastTime=-1;
-let faceOccluder=null,headOccluder=null,canonicalFace=null,previousPose=null,filteredFace=null,lastTrackingTime=0;
+let faceOccluder=null,headOccluder=null,earOccluders=null,canonicalFace=null,previousPose=null,filteredFace=null,lastTrackingTime=0;
 let startupController=null,modelController=null,loadingMessage='';
 let cameraFrame=null;
 let lightingEnvironment=null;
@@ -75,6 +76,7 @@ async function setModel(p) {
       }
       next=gltf.scene;
       const opticalProfile=prepareKnownMaterials(gltf);
+      prepareKnownTempleFit(gltf);
       const box=new THREE.Box3().setFromObject(next),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
       if(!size.x)throw new Error('Le modèle 3D est vide.');
       const fitting=gltf.asset?.extras?.lunetteCaba;
@@ -114,6 +116,7 @@ function stop() {
   if(model){scene?.remove(model);dispose(model);model=null;}
   if(faceOccluder){dispose(faceOccluder);faceOccluder=null;}
   if(headOccluder){dispose(headOccluder);headOccluder=null;}
+  if(earOccluders){dispose(earOccluders);earOccluders=null;}
   cameraFrame?.dispose();cameraFrame=null;
   lightingEnvironment?.dispose();lightingEnvironment=null;
   previousPose=null;
@@ -195,6 +198,7 @@ $('#start-camera').onclick=async()=>{
     camera=new THREE.PerspectiveCamera(CAMERA_FOV,aspect,.1,500);
     faceOccluder=createFaceOccluder(topology.triangles);scene.add(faceOccluder);
     headOccluder=createHeadOccluder();scene.add(headOccluder);
+    earOccluders=createEarOccluders();scene.add(earOccluders);
     scene.add(new THREE.HemisphereLight(0xffffff,0x777777,3));
     const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(0,2,5);scene.add(light);
     // Tracking no longer waits for a large GLB to download and decode.
@@ -236,7 +240,10 @@ function tick() {
         model.quaternion.copy(tracking.fit.quaternion);
         const frameWidth=selected.frameWidthMm?selected.frameWidthMm/10:model.userData.opticalProfile?.frameWidthCm??14;
         model.scale.setScalar(tracking.fit.width*frameWidth/14);
-        if(!tracking.held)updateRigidOccluders(faceOccluder,headOccluder,filteredFace,canvas.width/canvas.height,fit);
+        if(!tracking.held){
+          updateRigidOccluders(faceOccluder,headOccluder,filteredFace,canvas.width/canvas.height,fit);
+          updateEarOccluders(earOccluders,fit);
+        }
         fitted = true;
       }
       if(!tracking.fit) {
@@ -248,6 +255,7 @@ function tick() {
         if (model) model.visible = false;
         if (faceOccluder) faceOccluder.visible = false;
         if (headOccluder) headOccluder.visible = false;
+        if (earOccluders) earOccluders.visible = false;
       }
       $('#snapshot').disabled = !fitted||tracking.held;
       if(!loadingMessage)$('#try-status').textContent = fitted

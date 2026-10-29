@@ -67,3 +67,7 @@ Recharger complètement la page. La politique CSP du serveur autorise désormais
 - Suite API/pose et interface ordinateur/mobile.
 
 La vérification physique sur le téléphone/ordinateur du propriétaire et le déploiement sur EC2 restent à faire après les commandes ci-dessus.
+
+## Ajustement des branches à l'exécution
+
+Le moteur applique désormais un relèvement progressif des branches arrière de cet actif connu et des masques d'oreilles estimées. Ce traitement ne réécrit pas le GLB ni le catalogue ; il préserve les positions et l'éclairage de la face avant, ses UV et ses matériaux. Les autres actifs ne reçoivent pas ce relèvement. [Détails, limites et tests (arabe)](ear-occlusion-ar.md).

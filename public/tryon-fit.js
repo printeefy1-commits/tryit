@@ -208,7 +208,7 @@ export function updateRigidOccluders(faceMesh,headMesh,face,aspect,fit) {
       *THREE.MathUtils.smoothstep(Math.abs(x),2.5,4.5)
       *THREE.MathUtils.smoothstep(5-z,0,3)
       *THREE.MathUtils.smoothstep(y,.5,1.8)
-      *(1-THREE.MathUtils.smoothstep(y,5,7));
+      *(1-THREE.MathUtils.smoothstep(y,6.5,8));
     const clearance=THREE.MathUtils.lerp(.3+1.5*turn,.08+.22*bow*root,nasal)
       +3*bow*bowedRoot+5*nearTemple;
     const depth=(fit.occlusionDepths[i]-clearance)*fit.metricScale+fit.translation.z;

@@ -21,10 +21,14 @@ try {
     const THREE=await import('three');
     const {GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
     const {createFaceOccluder,createHeadOccluder,updateRigidOccluders}=await import('/tryon-fit.js');
+    const {createEarOccluders,updateEarOccluders,prepareKnownTempleFit}=await import('/tryon-ears.js');
+    const {prepareKnownMaterials}=await import('/tryon-materials.js');
     const {estimatePerspectiveFit,projectCameraPoint,CAMERA_FOV}=await import('/tryon-perspective.js');
     const canonical=(await(await fetch('/models/canonical-face.json')).json()).vertices;
     const triangles=(await(await fetch('/models/face-topology.json')).json()).triangles;
     const gltf=await new GLTFLoader().loadAsync('/products/head-12028/head-12028-generated.glb');
+    prepareKnownMaterials(gltf);
+    prepareKnownTempleFit(gltf);
     const {anchor,referenceWidth}=gltf.asset.extras.lunetteCaba;
     gltf.scene.updateMatrixWorld(true);
     const glasses=new THREE.Group(),colours=[0xff0000,0xffffff,0x00ff00,0x0000ff,0xffff00,0x00ffff];
@@ -48,6 +52,7 @@ try {
     });
     const scene=new THREE.Scene();scene.add(glasses);
     const faceMask=createFaceOccluder(triangles),headMask=createHeadOccluder();scene.add(faceMask,headMask);
+    const earMasks=createEarOccluders();scene.add(earMasks);
     const camera=new THREE.PerspectiveCamera(CAMERA_FOV,1,.1,500);
     const renderer=new THREE.WebGLRenderer({antialias:false,alpha:true});renderer.setSize(480,480);
     const target=new THREE.WebGLRenderTarget(480,480);renderer.setRenderTarget(target);
@@ -83,6 +88,7 @@ try {
       const depth=surface.point.z-.4;
       probe.position.set(x*-depth/fit.focal,y*-depth/fit.focal,depth);
       probe.visible=true;glasses.visible=false;faceMask.visible=headMask.visible=masked;
+      earMasks.visible=masked;
       renderer.render(scene,camera);
       const pixel=new Uint8Array(4);
       renderer.readRenderTargetPixels(target,px,py,1,1,pixel);
@@ -90,7 +96,9 @@ try {
       return pixel[3]>200;
     }
     function coverage(masked){
-      faceMask.visible=!!masked&&masked!=='head';headMask.visible=!!masked&&masked!=='face';renderer.render(scene,camera);
+      faceMask.visible=!!masked&&masked!=='head';headMask.visible=!!masked&&masked!=='face';
+      earMasks.visible=masked===true;
+      renderer.render(scene,camera);
       renderer.readRenderTargetPixels(target,0,0,480,480,pixels);
       const result=[0,0,0,0,0,0];
       for(let i=0;i<pixels.length;i+=4){
@@ -127,6 +135,7 @@ try {
       // 14-cm nominal width and anchor through its normalized wrapper.
       glasses.position.copy(fit.translation);glasses.quaternion.copy(fit.quaternion);glasses.scale.setScalar(fit.metricScale);
       updateRigidOccluders(faceMask,headMask,face,1,fit);
+      updateEarOccluders(earMasks,fit);
       const reference=coverage(false),masked=coverage(true);
       const faceOnly=coverage('face'),headOnly=coverage('head');
       const view=new THREE.Vector3(0,0,1).applyQuaternion(fit.quaternion.clone().invert());
