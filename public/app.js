@@ -67,6 +67,11 @@ function assertSession(version) {
   if(version!==sessionVersion||!dialog.open)throw aborted();
 }
 function dispose(obj){obj.traverse(n=>{n.geometry?.dispose();const materials=Array.isArray(n.material)?n.material:n.material?[n.material]:[];for(const m of materials){for(const v of Object.values(m))if(v?.isTexture)v.dispose();m.dispose()}})}
+// Read-only console diagnostics for checking an uploaded file on a remote
+// device. No camera frames, landmarks, credentials or private URLs are exposed.
+window.tryonDiagnostics=()=>({productId:selected?.id||null,sourceSha256:selected?.sourceSha256||null,
+  fitting:model?.userData.fitting||null,templeGroups:model?.userData.templeVisibility?.arms.length||0});
+
 async function setModel(p) {
   selected=p;
   $('#try-name').textContent=p.name;

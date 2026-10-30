@@ -51,6 +51,10 @@ try{
   await card.locator('.product-photo-choices button').nth(1).click();await card.locator('.product-art>img').evaluate(img=>img.decode());assert.equal(await card.locator('.product-art>img').getAttribute('src'),product.images[1]);
   await card.getByRole('button',{name:'Essayer sur mon visage'}).click();
   await shop.waitForFunction(()=>document.querySelector('#try-status').textContent.startsWith('Visage détecté'),{},{timeout:120000});assert.ok(await shop.locator('#snapshot').isEnabled());assert.equal(await shop.evaluate(()=>window.cameraRequests),1);
+  const diagnostics=await shop.evaluate(()=>window.tryonDiagnostics());
+  assert.equal(diagnostics.sourceSha256,product.sourceSha256);
+  assert.equal(diagnostics.fitting.templeFit?.method,'geometry','a new optimized admin upload must activate temple deformation, not just display');
+  assert.ok(diagnostics.fitting.templeFit.movedVertices>1000&&diagnostics.templeGroups>=2,'ear clipping must be active on the uploaded mesh');
   assert.equal(await shop.locator(`.model-choice[data-model-id="${product.id}"]`).getAttribute('aria-pressed'),'true');await shop.screenshot({path:'/tmp/tryit-admin-upload-camera.png'});
   await shop.getByRole('button',{name:'Fermer',exact:true}).click();assert.ok(requestedModels.includes(product.model));assert.ok(!requestedModels.includes(product.modelOriginal));assert.deepEqual(errors,[]);
   console.log('PASS: multiple-photo/large GLB upload and automatic optimization, primary selection, 3D preview, responsive editor, saved gallery, customer photo switching, model carousel and live camera.'+(process.env.HEIC_FIXTURE?' HEIC conversion verified.':''));

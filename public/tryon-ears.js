@@ -37,13 +37,31 @@ export function updateEarOccluders(ears,fit) {
   ears.scale.setScalar(fit.metricScale);ears.visible=true;
 }
 
-// The known generated HEAD mesh bends down too early, ending across the ear
-// opening. Lift only its rear temples smoothly toward the estimated upper rim.
-// The lens/bridge/hinge positions, UVs, material assignments and source GLB stay
-// intact. This is an aesthetic fitting adjustment, not a new measured product.
-export function prepareKnownTempleFit(gltf) {
-  const profile=gltf.asset?.extras?.lunetteCaba;
-  const tuning=knownModelProfile(gltf)?.templeFit;
+// Lens protection must follow materials, not an assumed slot in an uploaded GLB.
+export function isLensMaterial(material){
+  return !!material&&(material.transmission>0||(material.transparent&&material.opacity<1)
+    ||/(?:^|[ _-])(lens(?:es)?|verres?)(?:$|[ _-])/i.test(material.name||''));
+}
+
+function protectedLensVertices(mesh,reviewed){
+  const geometry=mesh.geometry,flags=new Uint8Array(geometry.attributes.position.count);
+  const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+  const count=geometry.index?.count??flags.length;
+  const groups=Array.isArray(mesh.material)&&geometry.groups.length?geometry.groups:[{start:0,count,materialIndex:0}];
+  for(const group of groups)if((reviewed&&Array.isArray(mesh.material)&&group.materialIndex===1)||isLensMaterial(materials[group.materialIndex])){
+    for(let j=group.start;j<Math.min(count,group.start+group.count);j++)flags[geometry.index?geometry.index.getX(j):j]=1;
+  }
+  return flags;
+}
+
+// Reviewed sources retain their measured-in-model-space tuning. New uploads
+// supply the frontal anchor after orientation and use bilateral rear geometry
+// instead. Both paths keep lenses, bridge, UVs, materials and source GLB intact;
+// the ear target remains an estimate, not a measurement of the wearer.
+export function prepareKnownTempleFit(gltf,geometryProfile=null) {
+  const profile=geometryProfile||gltf.asset?.extras?.lunetteCaba;
+  const reviewed=!geometryProfile,tuning=reviewed?knownModelProfile(gltf)?.templeFit:
+    {firstLiftCm:0,rearLiftCm:0,splayCm:0,extensionCm:0};
   if(!tuning||gltf.scene.userData.templeFitApplied)return null;
   if(!Array.isArray(profile.anchor)||profile.anchor.length!==3||!profile.anchor.every(Number.isFinite)
     ||!Number.isFinite(profile.referenceWidth)||profile.referenceWidth<=0)return null;
@@ -52,16 +70,38 @@ export function prepareKnownTempleFit(gltf) {
   let movedVertices=0,maxLiftCm=0,maxExtensionCm=0,maxSplayCm=0;
   const records=[],edges=[new Map(),new Map()];
   gltf.scene.updateMatrixWorld(true);
+  let lengthScale=TEMPLE_SUPPORT.lengthScale;
+  if(!reviewed){
+    const reach=[Infinity,Infinity],counts=[0,0];let unsupported=false;
+    gltf.scene.traverse(mesh=>{
+      if(!mesh.isMesh)return;
+      if(mesh.isSkinnedMesh||Object.keys(mesh.geometry.morphAttributes).length){unsupported=true;return;}
+      const positions=mesh.geometry.attributes.position;if(!positions)return;
+      const lenses=protectedLensVertices(mesh,false);
+      for(let i=0;i<positions.count;i++)if(!lenses[i]){
+        point.fromBufferAttribute(positions,i).applyMatrix4(mesh.matrixWorld).sub(anchor).divideScalar(sourcePerCm);
+        point.y+=2.625;point.z+=5.5;
+        if(isTempleRegion(point.x,point.z)){
+          const side=point.x<0?0:1;counts[side]++;reach[side]=Math.min(reach[side],point.z);
+        }
+      }
+    });
+    // Require two substantial rear arms. Flat scans and animated objects are
+    // left untouched rather than interpreting a rim as a temple.
+    if(unsupported||counts.some(n=>n<12)||reach.some(z=>z> -2)){
+      gltf.scene.userData.templeFitSkipped=unsupported?'animated-geometry':'rear-arms-not-found';return null;
+    }
+    // Usually 20% is sufficient. Short authored arms need enough reach to enter
+    // the ear mask; cap automatic stretch for implausible geometry.
+    lengthScale=Math.max(lengthScale,(TEMPLE_SUPPORT.hingeZ-TEMPLE_SUPPORT.contactZ+1)/
+      (TEMPLE_SUPPORT.hingeZ-Math.max(...reach)));
+    if(lengthScale>1.8){gltf.scene.userData.templeFitSkipped='insufficient-rear-reach';return null;}
+  }
   gltf.scene.traverse(mesh=>{
-    if(!mesh.isMesh)return;
+    if(!mesh.isMesh||!mesh.geometry.attributes.position)return;
     const original=mesh.geometry,geometry=original.clone(),positions=geometry.attributes.position;
     const movedFlags=new Uint8Array(positions.count),canonical=new Float32Array(positions.count*3);
-    const lensVertices=new Uint8Array(positions.count);
-    if(Array.isArray(mesh.material)&&geometry.index){
-      for(const group of geometry.groups)if(group.materialIndex===1){
-        for(let j=group.start;j<group.start+group.count;j++)lensVertices[geometry.index.getX(j)]=1;
-      }
-    }
+    const lensVertices=protectedLensVertices(mesh,reviewed);
     for(let i=0;i<positions.count;i++){
       point.fromBufferAttribute(positions,i).applyMatrix4(mesh.matrixWorld).sub(anchor).divideScalar(sourcePerCm);
       point.y+=2.625;point.z+=5.5;
@@ -75,7 +115,7 @@ export function prepareKnownTempleFit(gltf) {
       }
       // Scale rear reach about the hinge, never the entire glasses. Include
       // inward-curving hook vertices so the mesh stays connected at the tip.
-      point.z=TEMPLE_SUPPORT.hingeZ-(TEMPLE_SUPPORT.hingeZ-point.z)*TEMPLE_SUPPORT.lengthScale;
+      point.z=TEMPLE_SUPPORT.hingeZ-(TEMPLE_SUPPORT.hingeZ-point.z)*lengthScale;
       point.toArray(canonical,i*3);movedFlags[i]=1;
       const side=x<0?0:1,k=Math.floor(point.z*2),edge=edges[side];
       const previous=edge.get(k),outerX=Math.abs(point.x);
@@ -139,5 +179,7 @@ export function prepareKnownTempleFit(gltf) {
   }
   if(!movedVertices)return null;
   gltf.scene.userData.templeFitApplied=true;
-  return {estimated:true,lengthScale:TEMPLE_SUPPORT.lengthScale,supportLowerEdgeY:TEMPLE_SUPPORT.lowerEdgeY,maxLiftCm,maxSplayCm,maxExtensionCm,movedVertices};
+  gltf.scene.userData.templeFitProfile={anchor:profile.anchor,referenceWidth:profile.referenceWidth,reviewed};
+  const adjustment={estimated:true,method:reviewed?'reviewed-source':'geometry',lengthScale,supportLowerEdgeY:TEMPLE_SUPPORT.lowerEdgeY,maxLiftCm,maxSplayCm,maxExtensionCm,movedVertices};
+  gltf.scene.userData.templeFit=adjustment;return adjustment;
 }

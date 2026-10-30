@@ -17,7 +17,7 @@ export function prepareGlasses(gltf,product={}){
   }
   const opticalProfile=!rotated?prepareKnownMaterials(gltf):null;
   if(!rotated)prepareKnownTempleFit(gltf);
-  const templeVisibility=!rotated?prepareTempleVisibility(gltf):null;
+  let templeVisibility=!rotated?prepareTempleVisibility(gltf):null;
   const oriented=new THREE.Group();oriented.add(gltf.scene);
   oriented.rotation.set(...angles.map(THREE.MathUtils.degToRad));oriented.updateMatrixWorld(true);
   const box=new THREE.Box3().setFromObject(oriented),size=box.getSize(new THREE.Vector3());
@@ -39,11 +39,16 @@ export function prepareGlasses(gltf,product={}){
     referenceWidth=front.max.x-front.min.x;anchor=front.getCenter(new THREE.Vector3());
     anchor.z=box.max.z-referenceWidth*.025;
   }
+  if(!gltf.scene.userData.templeFitApplied){
+    prepareKnownTempleFit(gltf,{anchor:anchor.toArray(),referenceWidth});
+    templeVisibility=prepareTempleVisibility(gltf);
+  }
   const shifted=new THREE.Group();shifted.add(oriented);shifted.position.copy(anchor).negate();
   const wrapper=new THREE.Group();wrapper.add(shifted);wrapper.scale.setScalar(1/referenceWidth);
   const model=new THREE.Group();model.add(wrapper);
   if(opticalProfile)model.userData.opticalProfile=opticalProfile;
   if(templeVisibility)model.userData.templeVisibility=templeVisibility;
-  model.userData.fitting={anchor:anchor.toArray(),referenceWidth,estimated:!anchored};
+  model.userData.fitting={anchor:anchor.toArray(),referenceWidth,estimated:!anchored,
+    templeFit:gltf.scene.userData.templeFit||null,templeFitSkipped:gltf.scene.userData.templeFitSkipped||null};
   return model;
 }

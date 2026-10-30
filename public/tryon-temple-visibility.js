@@ -1,46 +1,64 @@
 import * as THREE from 'three';
-import {isTempleRegion} from './tryon-ears.js';
+import {isTempleRegion,isLensMaterial} from './tryon-ears.js';
 
-// Clip a continuous rear suffix, not isolated patches of a fused AI mesh.
-// Only already prepared, reviewed source assets have this controller.
+// Partition each material independently: uploaded files may have one fused
+// material, several frame materials, or lenses in any material slot.
 export function prepareTempleVisibility(gltf) {
   if(!gltf.scene.userData.templeFitApplied)return null;
   if(gltf.scene.userData.templeVisibility)return gltf.scene.userData.templeVisibility;
-  const profile=gltf.asset.extras.lunetteCaba,anchor=new THREE.Vector3(...profile.anchor);
-  const arms=[];gltf.scene.updateMatrixWorld(true);
+  const profile=gltf.scene.userData.templeFitProfile||gltf.asset?.extras?.lunetteCaba;
+  if(!profile)return null;
+  const anchor=new THREE.Vector3(...profile.anchor),arms=[],sideBins=[new Map(),new Map()];
+  gltf.scene.updateMatrixWorld(true);
   gltf.scene.traverse(mesh=>{
-    if(!mesh.isMesh||!Array.isArray(mesh.material)||mesh.material.length!==2)return;
+    if(!mesh.isMesh||!mesh.geometry.attributes.position)return;
     const geometry=mesh.geometry,positions=geometry.attributes.position,index=geometry.index;
+    const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material],count=index?.count??positions.count;
+    const groups=Array.isArray(mesh.material)&&geometry.groups.length?geometry.groups:[{start:0,count,materialIndex:0}];
     const points=Array.from({length:positions.count},(_,i)=>new THREE.Vector3().fromBufferAttribute(positions,i).applyMatrix4(mesh.matrixWorld).sub(anchor).divideScalar(profile.referenceWidth));
-    const front=[],lenses=[],parts=[[],[]],bins=[new Map(),new Map()];
-    for(const group of geometry.groups)for(let i=group.start;i<group.start+group.count;i+=3){
-      const ids=[index.getX(i),index.getX(i+1),index.getX(i+2)];
-      if(group.materialIndex===1){lenses.push(...ids);continue;}
-      const centre=ids.reduce((v,j)=>v.add(points[j]),new THREE.Vector3()).divideScalar(3);
-      const distance=-1.5-centre.z*14;
-      if(!isTempleRegion(centre.x*14,centre.z*14+5.5)||distance<=0){front.push(...ids);continue;}
-      const side=centre.x<0?0:1;
-      parts[side].push({ids,end:Math.max(...ids.map(j=>-1.5-points[j].z*14))});
-      for(const j of ids){
-        const d=-1.5-points[j].z*14,k=Math.max(0,Math.floor(d*2));
-        if(!bins[side].has(k))bins[side].set(k,new THREE.Box3());bins[side].get(k).expandByPoint(points[j]);
+    const buckets=new Map();
+    for(const group of groups){
+      const materialIndex=group.materialIndex??0;
+      if(!buckets.has(materialIndex))buckets.set(materialIndex,{front:[],parts:[[],[]]});
+      const {front,parts}=buckets.get(materialIndex);
+      const lens=(profile.reviewed!==false&&Array.isArray(mesh.material)&&materialIndex===1)||isLensMaterial(materials[materialIndex]);
+      for(let i=group.start;i<Math.min(count,group.start+group.count);i+=3){
+        const ids=[0,1,2].map(j=>index?index.getX(i+j):i+j);
+        const centre=ids.reduce((v,j)=>v.add(points[j]),new THREE.Vector3()).divideScalar(3);
+        const distance=-1.5-centre.z*14;
+        if(lens||!isTempleRegion(centre.x*14,centre.z*14+5.5)||distance<=0){for(const id of ids)front.push(id);continue;}
+        const side=centre.x<0?0:1;
+        parts[side].push({ids,end:Math.max(...ids.map(j=>-1.5-points[j].z*14))});
+        for(const j of ids){
+          const d=-1.5-points[j].z*14,k=Math.max(0,Math.floor(d*2));
+          if(!sideBins[side].has(k))sideBins[side].set(k,new THREE.Box3());sideBins[side].get(k).expandByPoint(points[j]);
+        }
       }
     }
-    // A raw high-resolution GLB can have millions of lens indices. Spreading
-    // that array into push() exceeds JavaScript's argument/stack limit.
-    const ordered=new (positions.count>65535?Uint32Array:Uint16Array)(index.count);
-    ordered.set(front);let cursor=front.length;geometry.clearGroups();geometry.addGroup(0,front.length,0);
-    parts.forEach((triangles,side)=>{
-      if(!triangles.length)return;
-      triangles.sort((a,b)=>a.end-b.end);
-      const group={start:cursor,count:triangles.length*3,materialIndex:0};geometry.groups.push(group);
-      for(const t of triangles)for(const id of t.ids)ordered[cursor++]=id;
-      arms.push({side:side===0?-1:1,group,ends:triangles.map(t=>t.end),samples:[...bins[side]].sort((a,b)=>a[0]-b[0]).map(([,box])=>{
-        const point=box.getCenter(new THREE.Vector3());return {point,distance:-1.5-point.z*14};
-      }),cutoff:Infinity});
-    });
-    geometry.addGroup(cursor,lenses.length,1);ordered.set(lenses,cursor);geometry.setIndex(new THREE.BufferAttribute(ordered,1));
+    const total=[...buckets.values()].reduce((n,b)=>n+b.front.length+b.parts.reduce((n,p)=>n+p.length*3,0),0);
+    const ordered=new (positions.count>65535?Uint32Array:Uint16Array)(total);
+    let cursor=0;geometry.clearGroups();
+    for(const [materialIndex,{front,parts}] of buckets){
+      if(front.length){geometry.addGroup(cursor,front.length,materialIndex);ordered.set(front,cursor);cursor+=front.length;}
+      parts.forEach((triangles,side)=>{
+        if(!triangles.length)return;
+        triangles.sort((a,b)=>a.end-b.end);
+        const group={start:cursor,count:triangles.length*3,materialIndex};geometry.groups.push(group);
+        for(const t of triangles)for(const id of t.ids)ordered[cursor++]=id;
+        arms.push({side:side===0?-1:1,group,ends:triangles.map(t=>t.end),samples:[],cutoff:Infinity});
+      });
+    }
+    geometry.setIndex(new THREE.BufferAttribute(ordered,1));
+    // Three ignores geometry groups for a scalar material; an array is needed
+    // for per-arm group counts to actually affect the rendered draw calls.
+    if(!Array.isArray(mesh.material))mesh.material=[mesh.material];
   });
+  // A screw or tip material need not span the whole shaft. Share the side's
+  // centreline so all material groups stop at the same anatomical contact.
+  const samples=sideBins.map(bins=>[...bins].sort((a,b)=>a[0]-b[0]).map(([,box])=>{
+    const point=box.getCenter(new THREE.Vector3());return {point,distance:-1.5-point.z*14};
+  }));
+  for(const arm of arms)arm.samples=samples[arm.side<0?0:1];
   const control=arms.length?{arms}:null;gltf.scene.userData.templeVisibility=control;
   return control;
 }
