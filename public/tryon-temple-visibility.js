@@ -25,17 +25,20 @@ export function prepareTempleVisibility(gltf) {
         if(!bins[side].has(k))bins[side].set(k,new THREE.Box3());bins[side].get(k).expandByPoint(points[j]);
       }
     }
-    const ordered=[...front];geometry.clearGroups();geometry.addGroup(0,front.length,0);
+    // A raw high-resolution GLB can have millions of lens indices. Spreading
+    // that array into push() exceeds JavaScript's argument/stack limit.
+    const ordered=new (positions.count>65535?Uint32Array:Uint16Array)(index.count);
+    ordered.set(front);let cursor=front.length;geometry.clearGroups();geometry.addGroup(0,front.length,0);
     parts.forEach((triangles,side)=>{
       if(!triangles.length)return;
       triangles.sort((a,b)=>a.end-b.end);
-      const group={start:ordered.length,count:triangles.length*3,materialIndex:0};geometry.groups.push(group);
-      for(const t of triangles)ordered.push(...t.ids);
+      const group={start:cursor,count:triangles.length*3,materialIndex:0};geometry.groups.push(group);
+      for(const t of triangles)for(const id of t.ids)ordered[cursor++]=id;
       arms.push({group,ends:triangles.map(t=>t.end),samples:[...bins[side]].sort((a,b)=>a[0]-b[0]).map(([,box])=>{
         const point=box.getCenter(new THREE.Vector3());return {point,distance:-1.5-point.z*14};
       }),cutoff:Infinity});
     });
-    geometry.addGroup(ordered.length,lenses.length,1);ordered.push(...lenses);geometry.setIndex(ordered);
+    geometry.addGroup(cursor,lenses.length,1);ordered.set(lenses,cursor);geometry.setIndex(new THREE.BufferAttribute(ordered,1));
   });
   const control=arms.length?{arms}:null;gltf.scene.userData.templeVisibility=control;
   return control;
@@ -53,7 +56,8 @@ export function updateTempleVisibility(model,occluders) {
       const distance=point.length();ray.set(new THREE.Vector3(),point.clone().divideScalar(distance));ray.far=distance-.06;
       if(ray.intersectObjects(occluders,true).length){arm.cutoff=Math.max(0,sample.distance-.15);break;}
     }
-    let count=0;while(count<arm.ends.length&&arm.ends[count]<=arm.cutoff)count++;
-    arm.group.count=count*3;
+    let low=0,high=arm.ends.length;
+    while(low<high){const middle=(low+high)>>>1;if(arm.ends[middle]<=arm.cutoff)low=middle+1;else high=middle;}
+    arm.group.count=low*3;
   }
 }

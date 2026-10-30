@@ -18,7 +18,11 @@ try{
   await page.getByRole('button',{name:'Ajouter une monture'}).click();
   await page.locator('[name=name]').fill(name);await page.locator('[name=brand]').fill('HEAD');await page.locator('[name=frameWidthMm]').fill('143');await page.locator('[name=scale]').fill('0.95');
   const photo=process.env.HEIC_FIXTURE||new URL('../public/products/models-v2/product.webp',import.meta.url).pathname;
-  await page.locator('[name=image]').setInputFiles(photo);await page.locator('[name=imageFit]').selectOption('cover');
+  const second=new URL('../public/products/models-v2/product.webp',import.meta.url).pathname;
+  await page.locator('[name=image]').setInputFiles([photo,second]);
+  assert.equal(await page.locator('.admin-photo-tile').count(),2);
+  await page.locator('.admin-photo-tile').nth(1).getByRole('button',{name:'Définir principale',exact:true}).click();
+  await page.locator('[name=imageFit]').selectOption('cover');
   const model=uploadModelFixture(await fs.readFile(new URL('../public/products/models-v2/head-blue.glb',import.meta.url)));
   await page.locator('[name=model]').setInputFiles({name:'direct-model.glb',mimeType:'model/gltf-binary',buffer:model});
   await page.waitForFunction(()=>document.querySelector('#preview-status').textContent.startsWith('Modèle prêt'),{},{timeout:120000});
@@ -37,15 +41,19 @@ try{
   const catalogue=await(await context.request.get('http://127.0.0.1:3206/api/admin/products')).json(),product=catalogue.find(p=>p.id===productId);assert.ok(product);
   await page.getByText('Monture enregistrée.',{exact:true}).waitFor();assert.ok(product.modelBytes>25*1024*1024);assert.equal(product.frameWidthMm,143);assert.equal(product.scale,.95);assert.equal(product.imageFit,'cover');
   assert.deepEqual(product.modelRotation,[0,0,0]);assert.equal(await page.evaluate(()=>window.sawUploadProgress),true);
-  if(process.env.HEIC_FIXTURE)assert.ok(product.image.endsWith('.jpg'),'HEIC becomes a browser-readable JPEG');
+  assert.equal(product.images.length,2);assert.equal(product.image,product.images[0]);assert.ok(product.image.endsWith('.webp'),'the selected primary photo is used');
+  if(process.env.HEIC_FIXTURE)assert.ok(product.images.some(src=>src.endsWith('.jpg')),'HEIC becomes a browser-readable JPEG');
   const row=page.locator('.row').filter({hasText:name});await row.getByRole('button',{name:'Modifier',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#preview-status').textContent.startsWith('Modèle prêt'),{},{timeout:120000});
-  assert.equal(await page.locator('[name=frameWidthMm]').inputValue(),'143');await page.getByRole('button',{name:'Annuler',exact:true}).click();
+  assert.equal(await page.locator('[name=frameWidthMm]').inputValue(),'143');assert.equal(await page.locator('.admin-photo-tile').count(),2);await page.getByRole('button',{name:'Annuler',exact:true}).click();
   const shop=await context.newPage();shop.on('pageerror',e=>errors.push(e.message));await shop.goto('http://127.0.0.1:3206');
-  const card=shop.locator('.product').filter({has:shop.getByRole('heading',{name,exact:true})});await card.locator('img').evaluate(img=>img.decode());await card.getByRole('button',{name:'Essayer sur mon visage'}).click();
+  const card=shop.locator('.product').filter({has:shop.getByRole('heading',{name,exact:true})});await card.locator('.product-art>img').evaluate(img=>img.decode());
+  assert.equal(await card.locator('.product-photo-choices button').count(),2);
+  await card.locator('.product-photo-choices button').nth(1).click();await card.locator('.product-art>img').evaluate(img=>img.decode());assert.equal(await card.locator('.product-art>img').getAttribute('src'),product.images[1]);
+  await card.getByRole('button',{name:'Essayer sur mon visage'}).click();
   await shop.waitForFunction(()=>document.querySelector('#try-status').textContent.startsWith('Visage détecté'),{},{timeout:120000});assert.ok(await shop.locator('#snapshot').isEnabled());assert.equal(await shop.evaluate(()=>window.cameraRequests),1);
   assert.equal(await shop.locator(`.model-choice[data-model-id="${product.id}"]`).getAttribute('aria-pressed'),'true');await shop.screenshot({path:'/tmp/tryit-admin-upload-camera.png'});
   await shop.getByRole('button',{name:'Fermer',exact:true}).click();assert.deepEqual(errors,[]);
-  console.log('PASS: direct authenticated photo/26-MiB GLB upload, 3D preview, responsive editor, save/edit persistence, published photo, carousel and live camera try-on.'+(process.env.HEIC_FIXTURE?' HEIC conversion verified.':''));
+  console.log('PASS: multiple-photo/26-MiB GLB upload, primary selection, 3D preview, responsive editor, saved gallery, customer photo switching, model carousel and live camera.'+(process.env.HEIC_FIXTURE?' HEIC conversion verified.':''));
 }finally{
   if(productId&&context)await context.request.delete('http://127.0.0.1:3206/api/admin/products/'+productId).catch(()=>{});
   await browser?.close();child.kill();

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {createModelLoader} from './model-loader.js';
 import {prepareGlasses} from './prepare-glasses.js';
 import {MODEL_MAX_BYTES} from './upload-config.js';
+import {productPhotos} from './product-photos.js';
 import {smoothLandmarks, createFaceOccluder, createHeadOccluder, updateRigidOccluders, PoseContinuity} from './tryon-fit.js';
 import {estimatePerspectiveFit,trackingAlpha,CAMERA_FOV} from './tryon-perspective.js';
 import {FaceLandmarker,FilesetResolver} from '/vendor/vision/vision_bundle.mjs';
@@ -16,10 +17,20 @@ const arrowIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 $('#count').textContent=String(products.length).padStart(2,'0')+' monture'+(products.length>1?'s':'');
 for(const [index,p] of products.entries()){
-  const card=document.createElement('article');card.className='product';
+  const card=document.createElement('article');card.className='product';const photos=productPhotos(p);
   const description=p.id==='head-12028-col400'?'Noir profond · Verres gris':p.id==='head-12028-models-v2'?'Bleu nuit · Verres bleus':'Votre prochain point de vue.';
-  card.innerHTML=`<div class="product-art">${p.image?`<img class="${p.imageFit==='cover'?'product-image--cover':''}" src="${escape(p.image)}" alt="${escape(p.brand+' '+p.name)}" width="1300" height="1000" loading="lazy">`:'<div class="product-placeholder">Photo à venir</div>'}<span class="product-number">${String(index+1).padStart(2,'0')}</span><span class="badge">${cameraIcon}${p.model?'ESSAYAGE VIRTUEL':'BIENTÔT EN ESSAI'}</span></div><div class="product-info"><div class="product-heading"><div><p class="brand">${escape(p.brand)}</p><h3>${escape(p.name)}</h3></div><span class="product-icon" aria-hidden="true">${arrowIcon}</span></div><p class="product-description">${description}</p><button ${!p.model?'disabled':''}>${p.model?'Essayer sur mon visage':'Essai bientôt disponible'} ${arrowIcon}</button></div>`;
-  card.querySelector('button').onclick=()=>openTry(p);$('#products').append(card);
+  card.innerHTML=`<div class="product-art">${p.image?`<img class="${p.imageFit==='cover'?'product-image--cover':''}" src="${escape(p.image)}" alt="${escape(p.brand+' '+p.name)}" width="1300" height="1000" loading="lazy">`:'<div class="product-placeholder">Photo à venir</div>'}<span class="product-number">${String(index+1).padStart(2,'0')}</span><span class="badge">${cameraIcon}${p.model?'ESSAYAGE VIRTUEL':'BIENTÔT EN ESSAI'}</span></div><div class="product-info"><div class="product-heading"><div><p class="brand">${escape(p.brand)}</p><h3>${escape(p.name)}</h3></div><span class="product-icon" aria-hidden="true">${arrowIcon}</span></div><p class="product-description">${description}</p><button class="product-try" ${!p.model?'disabled':''}>${p.model?'Essayer sur mon visage':'Essai bientôt disponible'} ${arrowIcon}</button></div>`;
+  card.querySelector('.product-try').onclick=()=>openTry(p);
+  if(photos.length>1){
+    const gallery=document.createElement('div');gallery.className='product-photo-choices';gallery.setAttribute('role','group');gallery.setAttribute('aria-label','Photos de '+p.brand+' '+p.name);
+    for(const [photoIndex,src] of photos.entries()){
+      const choice=document.createElement('button');choice.type='button';choice.setAttribute('aria-label','Voir la photo '+(photoIndex+1)+' de '+p.brand+' '+p.name);choice.setAttribute('aria-pressed',String(photoIndex===0));
+      const img=document.createElement('img');img.src=src;img.alt='';img.loading='lazy';choice.append(img);
+      choice.onclick=()=>{const main=card.querySelector('.product-art>img');main.src=src;main.alt=p.brand+' '+p.name+' · photo '+(photoIndex+1);for(const button of gallery.children)button.setAttribute('aria-pressed',String(button===choice));};gallery.append(choice);
+    }
+    card.querySelector('.product-art').append(gallery);
+  }
+  $('#products').append(card);
 }
 if(!products.length){const empty=document.createElement('p');empty.className='empty-collection';empty.textContent='La collection arrive bientôt.';$('#products').append(empty);}
 const featured=products.find(p=>p.id==='head-12028-models-v2'&&p.image)||products.find(p=>p.image);

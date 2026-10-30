@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 
 LIMITS = {
-    'client_max_body_size': '120m',
+    'client_max_body_size': '220m',
     'client_body_timeout': '120s',
     'proxy_read_timeout': '600s',
     'proxy_send_timeout': '600s',
@@ -83,7 +83,7 @@ def main():
         subprocess.run(['systemctl', 'reload', 'nginx'], check=True)
     finally:
         Path(temporary).unlink(missing_ok=True)
-    print('Nginx upload limit set to 120 MB. TLS/proxy settings preserved. Backup: ' + str(backup))
+    print('Nginx upload limit set to 220 MB. TLS/proxy settings preserved. Backup: ' + str(backup))
 
 if __name__ == '__main__':
     main()

@@ -12,7 +12,7 @@ bash scripts/setup-model.sh
 npm start
 ```
 
-Port par défaut : 3000. `/admin.html` : administration avec ajout direct de photos (JPG/PNG/WebP/HEIC, 10 MiB) et de GLB autonomes (100 MiB), aperçu 3D et progression d’envoi. [Utilisation et mise à jour unique du serveur (arabe)](docs/admin-uploads-ar.md). `npm test` : intégration API (authentification, protection des écritures, visibilité et cycle CRUD). Le modèle de suivi du visage est téléchargé depuis le dépôt officiel Google ; autoriser `storage.googleapis.com` si nécessaire. Les fichiers WASM, le modèle et les bibliothèques sont ensuite servis localement : aucune image caméra n’est transmise au serveur.
+Port par défaut : 3000. `/admin.html` : administration avec ajout direct de photos (JPG/PNG/WebP/HEIC, jusqu’à 10 photos de 10 MiB chacune) et de GLB autonomes (100 MiB), aperçu 3D et progression d’envoi. [Utilisation et mise à jour unique du serveur (arabe)](docs/admin-uploads-ar.md). `npm test` : intégration API (authentification, protection des écritures, visibilité et cycle CRUD). Le modèle de suivi du visage est téléchargé depuis le dépôt officiel Google ; autoriser `storage.googleapis.com` si nécessaire. Les fichiers WASM, le modèle et les bibliothèques sont ensuite servis localement : aucune image caméra n’est transmise au serveur.
 
 ## Produits et 3D
 
@@ -56,7 +56,7 @@ WantedBy=multi-user.target
 Extrait Nginx à intégrer au serveur HTTPS de votre domaine :
 
 ```nginx
-client_max_body_size 120m;
+client_max_body_size 220m;
 client_body_timeout 120s;
 proxy_read_timeout 600s;
 proxy_send_timeout 600s;

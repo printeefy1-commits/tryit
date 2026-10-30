@@ -1,6 +1,8 @@
-import {MODEL_MAX_BYTES,IMAGE_MAX_BYTES} from './upload-config.js';
+import {MODEL_MAX_BYTES} from './upload-config.js';
+import {PhotoGallery} from './admin-gallery.js';
 const $=s=>document.querySelector(s),form=$('#editor');
-let items=[],editing='new',currentProduct=null,uploading=false,preview,previewPromise,previewVersion=0,previewLoading=false,previewError=false,photoURL,photoVersion=0;
+let items=[],editing='new',currentProduct=null,uploading=false,preview,previewPromise,previewVersion=0,previewLoading=false,previewError=false;
+const gallery=new PhotoGallery(()=>updateSave(),message=>feedback(message));
 const size=bytes=>bytes?`${(bytes/1024/1024).toFixed(1)} Mo`:'';
 function feedback(text,state='error'){const node=$('#feedback');node.textContent=text;node.dataset.state=state;node.hidden=!text;}
 function authentication(admin){$('#login').hidden=admin;$('#dashboard').hidden=!admin;if(!admin)preview?.pause();else if(!form.hidden&&preview?.model)preview.play();}
@@ -35,7 +37,7 @@ async function refresh(){
   const state=await api('/api/session');authentication(state.admin);if(!state.admin)return;
   items=await api('/api/admin/products');$('#stat-total').textContent=items.length;$('#stat-visible').textContent=items.filter(p=>p.visible).length;$('#stat-models').textContent=items.filter(p=>p.model).length;drawList();
 }
-function updateSave(){ $('#save-product').disabled=uploading||!!form.elements.model.files[0]&&(previewLoading||previewError); }
+function updateSave(){ $('#save-product').disabled=uploading||gallery.blocked||!!form.elements.model.files[0]&&(previewLoading||previewError); }
 function setUploading(value){uploading=value;$('#editor-fields').disabled=value;$('#new').disabled=value;$('#logout').disabled=value;for(const button of $('#list').querySelectorAll('button'))button.disabled=value;updateSave();}
 async function getPreview(){if(!previewPromise)previewPromise=import('./admin-preview.js').then(({ModelPreview})=>{preview=new ModelPreview($('#model-preview'));return preview;});return previewPromise;}
 async function renderModel(){
@@ -52,12 +54,6 @@ async function renderModel(){
   }catch(error){if(version!==previewVersion)return;previewError=true;$('#preview-message').hidden=false;$('#preview-message').textContent=error.message;$('#preview-status').textContent='Aperçu indisponible. Choisissez un GLB valide.';}
   finally{if(version===previewVersion){previewLoading=false;updateSave();}}
 }
-function showPhoto(source,heic=false){
-  const version=++photoVersion,img=$('#photo-preview');if(photoURL){URL.revokeObjectURL(photoURL);photoURL=null;}
-  if(!source){img.hidden=true;img.removeAttribute('src');$('#photo-placeholder').hidden=false;$('#photo-placeholder').textContent='Votre photo apparaîtra ici';return;}
-  const url=source instanceof File?(photoURL=URL.createObjectURL(source)):source;img.src=url;img.hidden=false;$('#photo-placeholder').hidden=true;
-  img.decode().catch(()=>{if(version!==photoVersion)return;img.hidden=true;$('#photo-placeholder').hidden=false;$('#photo-placeholder').textContent=heic?'Photo HEIC sélectionnée · conversion en JPG à l’enregistrement.':'Impossible de lire cette photo.';if(!heic){feedback('Choisissez une photo JPG, PNG ou WebP valide.');form.elements.image.value='';}});
-}
 function updatePhotoFit(){ $('#photo-preview').classList.toggle('photo-cover',form.elements.imageFit.value==='cover'); }
 function open(product){
   if(uploading)return;
@@ -67,19 +63,19 @@ function open(product){
   form.elements.productId.value=product?.id||crypto.randomUUID();form.elements.visible.checked=product?.visible??true;form.elements.imageFit.value=product?.imageFit||'contain';
   $('#editor-title').textContent=product?'Modifier la monture':'Nouvelle monture';$('#image-file-meta').textContent=product?.image?'Photo actuelle conservée tant que vous n’en choisissez pas une autre.':'Aucune photo sélectionnée.';
   $('#model-file-meta').textContent=product?.model?(product.modelFileName||'Modèle 3D actuel')+(product.modelBytes?' · '+size(product.modelBytes):''):'Aucun modèle sélectionné.';
-  $('#upload-state').hidden=true;form.hidden=false;showPhoto(product?.image);updatePhotoFit();renderModel();form.scrollIntoView({behavior:'smooth',block:'start'});form.elements.name.focus({preventScroll:true});
+  $('#upload-state').hidden=true;form.hidden=false;gallery.reset(product);updatePhotoFit();renderModel();form.scrollIntoView({behavior:'smooth',block:'start'});form.elements.name.focus({preventScroll:true});
 }
-function closeEditor(){++previewVersion;preview?.clear();previewLoading=false;previewError=false;form.hidden=true;currentProduct=null;showPhoto(null);form.reset();}
+function closeEditor(){++previewVersion;preview?.clear();previewLoading=false;previewError=false;form.hidden=true;currentProduct=null;gallery.reset();form.reset();}
 function selectFile(input){
-  const file=input.files[0],isModel=input.name==='model',maximum=isModel?MODEL_MAX_BYTES:IMAGE_MAX_BYTES;
-  if(file&&(file.size>maximum||!(isModel?/\.glb$/i:/\.(jpe?g|png|webp|heic|heif)$/i).test(file.name))){feedback(isModel?'Choisissez un GLB de 100 Mo maximum.':'Choisissez une photo JPG, PNG, WebP ou HEIC de 10 Mo maximum.');input.value='';$('#'+(isModel?'model':'image')+'-file-meta').textContent='Sélection refusée · choisissez un autre fichier.';if(isModel)renderModel();else showPhoto(currentProduct?.image);return;}
-  feedback('');$('#'+(isModel?'model':'image')+'-file-meta').textContent=file?file.name+' · '+size(file.size):isModel?'Le modèle actuel sera conservé.':'La photo actuelle sera conservée.';
-  if(isModel)renderModel();else showPhoto(file||currentProduct?.image,file&&/\.hei[cf]$/i.test(file.name));
+  if(input.name==='image'){gallery.add([...input.files]);input.value='';return;}
+  const file=input.files[0];
+  if(file&&(file.size>MODEL_MAX_BYTES||!/\.glb$/i.test(file.name))){feedback('Choisissez un GLB de 100 Mo maximum.');input.value='';$('#model-file-meta').textContent='Sélection refusée · choisissez un autre fichier.';renderModel();return;}
+  feedback('');$('#model-file-meta').textContent=file?file.name+' · '+size(file.size):'Le modèle actuel sera conservé.';renderModel();
 }
 function sendProduct(data){
   return new Promise((resolve,reject)=>{
     const xhr=new XMLHttpRequest();xhr.open('POST','/api/admin/products/'+encodeURIComponent(editing));xhr.timeout=10*60*1000;
-    xhr.upload.onprogress=event=>{if(!event.lengthComputable)return;const percent=Math.min(100,Math.round(event.loaded/event.total*100));$('#upload-progress').value=percent;$('#upload-percent').textContent=percent+' %';$('#upload-label').textContent=percent===100?'Vérification et enregistrement…':'Envoi de vos fichiers…';$('#upload-detail').textContent=percent===100?'Le serveur vérifie le GLB et prépare la photo. Gardez cette page ouverte.':`${size(event.loaded)} / ${size(event.total)} · Gardez cette page ouverte.`;};
+    xhr.upload.onprogress=event=>{if(!event.lengthComputable)return;const percent=Math.min(100,Math.round(event.loaded/event.total*100));$('#upload-progress').value=percent;$('#upload-percent').textContent=percent+' %';$('#upload-label').textContent=percent===100?'Vérification et enregistrement…':'Envoi de vos fichiers…';$('#upload-detail').textContent=percent===100?'Le serveur vérifie le GLB et prépare les photos. Gardez cette page ouverte.':`${size(event.loaded)} / ${size(event.total)} · Gardez cette page ouverte.`;};
     xhr.onload=()=>{try{resolve(parseResponse(xhr.responseText,xhr.status));}catch(error){if(xhr.status===401)authentication(false);reject(error);}};
     xhr.onerror=()=>reject(Error('Connexion interrompue. Vérifiez votre connexion puis réessayez.'));xhr.onabort=()=>reject(Error('Envoi interrompu. Vérifiez la liste des produits avant de réessayer.'));xhr.ontimeout=()=>reject(Error('L’envoi a expiré. Vérifiez la liste des produits avant de réessayer.'));xhr.send(data);
   });
@@ -91,12 +87,12 @@ for(const name of ['image','model'])form.elements[name].onchange=()=>selectFile(
 form.elements.imageFit.onchange=updatePhotoFit;
 for(const zone of document.querySelectorAll('.upload-drop')){
   zone.ondragover=event=>{event.preventDefault();if(!uploading)zone.classList.add('drag-over');};zone.ondragleave=()=>zone.classList.remove('drag-over');
-  zone.ondrop=event=>{event.preventDefault();zone.classList.remove('drag-over');if(uploading||!event.dataTransfer.files.length)return;const transfer=new DataTransfer();transfer.items.add(event.dataTransfer.files[0]);const input=form.elements[zone.dataset.file];input.files=transfer.files;selectFile(input);};
+  zone.ondrop=event=>{event.preventDefault();zone.classList.remove('drag-over');if(uploading||!event.dataTransfer.files.length)return;const transfer=new DataTransfer();for(const file of [...event.dataTransfer.files].slice(0,zone.dataset.file==='image'?undefined:1))transfer.items.add(file);const input=form.elements[zone.dataset.file];input.files=transfer.files;selectFile(input);};
 }
 $('#apply-orientation').onclick=renderModel;$('#preview-front').onclick=()=>preview?.view('front');$('#preview-oblique').onclick=()=>preview?.view('oblique');
 form.onsubmit=async event=>{
-  event.preventDefault();if(uploading||form.elements.model.files[0]&&(previewLoading||previewError))return;
-  const data=new FormData(form);data.set('visible',form.elements.visible.checked?'true':'false');for(const name of ['image','model'])if(!data.get(name)?.size)data.delete(name);
+  event.preventDefault();if(uploading||gallery.blocked||form.elements.model.files[0]&&(previewLoading||previewError))return;
+  const data=new FormData(form);data.set('visible',form.elements.visible.checked?'true':'false');if(!data.get('model')?.size)data.delete('model');gallery.appendTo(data);
   setUploading(true);feedback('');$('#upload-state').hidden=false;$('#upload-progress').value=0;$('#upload-percent').textContent='0 %';$('#upload-label').textContent='Envoi en cours…';$('#upload-detail').textContent='Gardez cette page ouverte jusqu’à la confirmation.';
   try{await sendProduct(data);closeEditor();feedback('Monture enregistrée.','success');try{await refresh();}catch{feedback('Monture enregistrée. Actualisez la page pour mettre la liste à jour.','success');}}
   catch(error){feedback(error.message);$('#upload-label').textContent='Enregistrement non confirmé';$('#upload-detail').textContent=error.message;}

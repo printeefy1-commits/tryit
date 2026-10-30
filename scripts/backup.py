@@ -36,12 +36,16 @@ def create(project, output, settings=()):
         (stage / 'data/catalog.json').write_bytes(raw)
         referenced = set()
         for product in products:
-            for field in ('image', 'model'):
-                value = product.get(field)
+            gallery = product.get('images', [])
+            if not isinstance(gallery, list):
+                raise ValueError('Invalid product photo gallery')
+            for value in [product.get('image'), product.get('model'), *gallery]:
                 if not value:
                     continue
+                if not isinstance(value, str):
+                    raise ValueError('Unsafe upload reference')
                 relative = PurePosixPath(value)
-                if not isinstance(value, str) or not value.startswith('/uploads/') or len(relative.parts) != 3 or relative.name in ('.', '..') or '\\' in value:
+                if not value.startswith('/uploads/') or len(relative.parts) != 3 or relative.name in ('.', '..') or '\\' in value:
                     raise ValueError('Unsafe upload reference')
                 source = project / 'uploads' / relative.name
                 if source.is_symlink() or not source.is_file():

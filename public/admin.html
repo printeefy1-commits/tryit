@@ -23,9 +23,10 @@
           <div class="admin-grid">
             <div class="editor-assets">
               <h3>01 <span>Vos fichiers</span></h3>
-              <label for="image-file">Photo du produit</label>
-              <div class="upload-drop" data-file="image"><input id="image-file" type="file" name="image" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"><span class="upload-glyph" aria-hidden="true">+</span><strong>Choisir ou déposer une photo</strong><span>JPG, PNG, WebP ou HEIC · 10 Mo maximum</span></div>
+              <label for="image-file">Photos du produit</label>
+              <div class="upload-drop" data-file="image"><input id="image-file" type="file" name="image" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"><span class="upload-glyph" aria-hidden="true">+</span><strong>Choisir ou déposer des photos</strong><span>JPG, PNG, WebP ou HEIC · 10 photos, 10 Mo chacune</span></div>
               <p id="image-file-meta" class="file-meta">Aucune photo sélectionnée.</p>
+              <div id="photo-gallery" class="admin-photo-gallery" role="group" aria-label="Photos du produit"></div>
               <div class="admin-photo-frame"><img id="photo-preview" alt="Aperçu de la photo produit" hidden><span id="photo-placeholder">Votre photo apparaîtra ici</span></div>
               <label for="image-fit">Présentation de la photo</label><select id="image-fit" name="imageFit"><option value="contain">Afficher la photo complète</option><option value="cover">Remplir la carte produit</option></select>
               <label for="model-file">Modèle 3D</label>
@@ -40,7 +41,7 @@
               <label for="product-name">Nom du modèle</label><input id="product-name" name="name" maxlength="100" placeholder="Ex. 12030" required>
               <label for="product-brand">Marque</label><input id="product-brand" name="brand" maxlength="100" placeholder="Ex. HEAD" required>
               <label class="visibility-toggle"><input name="visible" type="checkbox" checked><span><b>Visible dans la boutique</b><small>Décochez pour préparer le produit sans le publier.</small></span></label>
-              <div class="editor-hint"><strong>Un seul enregistrement.</strong><p>La photo s’affiche dans la collection. Avec un GLB, le produit apparaît aussi parmi les montures à essayer dans la caméra.</p></div>
+              <div class="editor-hint"><strong>Un seul enregistrement.</strong><p>La photo principale s’affiche dans la collection. Les autres sont accessibles sur la fiche produit. Avec un GLB, le produit apparaît aussi parmi les montures à essayer dans la caméra.</p></div>
               <h3>03 <span>Le réglage de l’essayage</span></h3>
               <label for="frame-width">Largeur extérieure totale · mm (facultatif)</label><input id="frame-width" name="frameWidthMm" type="number" min="80" max="200" step="0.1" placeholder="Ex. 140"><img class="measurement-guide" src="/assets/frame-width-guide.svg" alt="A–B : mesurer les deux bords extérieurs de la face avant"><p class="small">D’un bord extérieur à l’autre. Sans cette mesure, la taille reste estimée.</p>
               <div class="setting-pair"><label>Échelle<input name="scale" type="number" step="0.01" min="0.3" max="3" value="1" required></label><label>Décalage vertical<input name="offset" type="number" step="0.01" min="-1" max="1" value="0" required></label></div>

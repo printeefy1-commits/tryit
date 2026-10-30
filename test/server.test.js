@@ -80,3 +80,25 @@ test('bad or external-resource GLB uploads fail without publishing files or chan
  assert.deepEqual((await fs.readdir(new URL('../uploads/',import.meta.url))).sort(),published);
  await fetch(base+'/api/logout',{method:'POST',headers});
 });
+
+test('multiple photos can be uploaded, reordered and removed without replacing the model or losing retained photos',async()=>{
+ const login=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});
+ const headers={cookie:login.headers.get('set-cookie').split(';')[0]},id=crypto.randomUUID();
+ const photo=await fs.readFile(new URL('../public/products/models-v2/product.webp',import.meta.url));
+ const model=await fs.readFile(new URL('../public/products/models-v2/head-blue.glb',import.meta.url));
+ const fields=()=>{const data=new FormData();data.set('name','Photo gallery test');data.set('brand','HEAD');data.set('visible','true');data.set('productId',id);return data;};
+ try{
+  const data=fields();data.append('image',new Blob([photo]),'front.webp');data.append('image',new Blob([photo]),'side.webp');data.set('model',new Blob([model]),'model.glb');data.set('photoOrder',JSON.stringify(['new:1','new:0']));
+  let response=await fetch(base+'/api/admin/products/new',{method:'POST',headers,body:data});assert.equal(response.status,200);
+  const saved=await response.json();assert.equal(saved.images.length,2);assert.equal(saved.image,saved.images[0]);assert.notEqual(saved.images[0],saved.images[1]);
+  const reorder=fields();reorder.set('photoOrder',JSON.stringify(saved.images.toReversed()));
+  response=await fetch(base+'/api/admin/products/'+id,{method:'POST',headers,body:reorder});assert.equal(response.status,200);let updated=await response.json();assert.deepEqual(updated.images,saved.images.toReversed());assert.equal(updated.image,saved.images[1]);assert.equal(updated.model,saved.model);
+  const append=fields();append.append('image',new Blob([photo]),'detail.webp');append.set('photoOrder',JSON.stringify([saved.images[1],'new:0']));
+  response=await fetch(base+'/api/admin/products/'+id,{method:'POST',headers,body:append});assert.equal(response.status,200);updated=await response.json();assert.equal(updated.images.length,2);assert.equal(updated.images[0],saved.images[1]);assert.equal(updated.model,saved.model);
+  assert.equal((await fetch(base+saved.images[0])).status,200,'removing from the gallery retains the old file');
+  const invalid=fields();invalid.set('photoOrder',JSON.stringify(['/uploads/not-owned.jpg']));response=await fetch(base+'/api/admin/products/'+id,{method:'POST',headers,body:invalid});assert.equal(response.status,400);
+  const unchanged=(await(await fetch(base+'/api/admin/products',{headers})).json()).find(p=>p.id===id);assert.deepEqual(unchanged.images,updated.images);
+  const tooMany=fields();for(let n=0;n<11;n++)tooMany.append('image',new Blob([photo]),n+'.webp');response=await fetch(base+'/api/admin/products/'+id,{method:'POST',headers,body:tooMany});assert.equal(response.status,400);
+  const clear=fields();clear.set('photoOrder','[]');response=await fetch(base+'/api/admin/products/'+id,{method:'POST',headers,body:clear});assert.equal(response.status,200);const cleared=await response.json();assert.deepEqual(cleared.images,[]);assert.equal(cleared.image,undefined);assert.equal(cleared.model,saved.model);
+ }finally{await fetch(base+'/api/admin/products/'+id,{method:'DELETE',headers});await fetch(base+'/api/logout',{method:'POST',headers});}
+});

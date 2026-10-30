@@ -9,7 +9,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {validateModel,validatePhoto} from './upload-validation.js';
-import {MODEL_MAX_BYTES} from './public/upload-config.js';
+import {MODEL_MAX_BYTES,PHOTO_MAX_COUNT} from './public/upload-config.js';
+import {parsePhotoOrder,planPhotos} from './product-gallery.js';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const app=express(); const prod=process.env.NODE_ENV==='production';
 if(!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length<12) throw Error('Set ADMIN_PASSWORD (at least 12 characters).');
@@ -42,10 +43,10 @@ app.post('/api/logout',admin,(req,res,next)=>req.session.destroy(err=>{if(err)re
 app.get('/api/products',async(req,res)=>res.json((await read()).filter(p=>p.visible)));
 app.get('/api/admin/products',admin,async(req,res)=>res.json(await read()));
 const upload=multer({storage:multer.diskStorage({destination:(req,file,cb)=>cb(null,req.uploadDir),filename:(req,file,cb)=>cb(null,crypto.randomUUID()+path.extname(file.originalname).toLowerCase())}),
- limits:{fileSize:MODEL_MAX_BYTES,files:2,fields:24,parts:28,fieldSize:8192},fileFilter:(req,file,cb)=>{
+ limits:{fileSize:MODEL_MAX_BYTES,files:PHOTO_MAX_COUNT+1,fields:24,parts:40,fieldSize:8192},fileFilter:(req,file,cb)=>{
   const valid=file.fieldname==='image'?/\.(png|jpe?g|webp|heic|heif)$/i.test(file.originalname):file.fieldname==='model'&&/\.glb$/i.test(file.originalname);
   cb(valid?null:Error('Format non pris en charge. Utilisez une photo JPG, PNG, WebP ou HEIC et un modèle GLB.'),valid);
- }}).fields([{name:'image',maxCount:1},{name:'model',maxCount:1}]);
+ }}).fields([{name:'image',maxCount:PHOTO_MAX_COUNT},{name:'model',maxCount:1}]);
 async function receiveUpload(req,res,next){
  try{
   req.uploadDir=await fs.mkdtemp(path.join(incoming,'upload-'));
@@ -79,17 +80,19 @@ app.post('/api/admin/products/:id',admin,receiveUpload,async(req,res)=>{
  if(hasFit&&!['contain','cover'].includes(imageFit))throw Error('Cadrage photo invalide.');
  const clientId=req.params.id==='new'&&req.body.productId;
  if(clientId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId))throw Error('Identifiant produit invalide.');
+ const photoOrder=parsePhotoOrder(req.body.photoOrder),imageFiles=files.filter(file=>file.fieldname==='image');
  const moved=[];let result;
  try{
   result=await mutate(async items=>{
    if(req.aborted||res.destroyed)throw Error('Envoi interrompu.');
    let p=items.find(x=>x.id===(clientId||req.params.id));
    if(!p){if(req.params.id!=='new')throw Error('Modèle introuvable.');p={id:clientId||crypto.randomUUID(),demo:false,estimatedDimensions:true};items.push(p);}
+   const photos=planPhotos(p,imageFiles,photoOrder);
    for(const file of files){
     const destination=path.join(root,'uploads',file.filename);await fs.rename(file.path,destination);moved.push(destination);
-    if(p[file.fieldname])p[file.fieldname==='model'?'previousModel':'previousImage']=p[file.fieldname];
-    p[file.fieldname]='/uploads/'+file.filename;
+    if(file.fieldname==='model'){if(p.model)p.previousModel=p.model;p.model='/uploads/'+file.filename;}
    }
+   if(photos!==undefined){if(p.image&&p.image!==photos[0])p.previousImage=p.image;p.images=photos;if(photos.length)p.image=photos[0];else delete p.image;}
    Object.assign(p,{name,brand,visible:req.body.visible==='true',scale,offset});
    if(hasWidth){if(frameWidthMm===null)delete p.frameWidthMm;else p.frameWidthMm=frameWidthMm;}
    if(hasRotation)p.modelRotation=rotation;

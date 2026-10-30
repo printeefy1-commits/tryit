@@ -49,6 +49,24 @@ class BackupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
             backup.verify(archive)
 
+    def test_all_gallery_photos_are_backed_up_once(self):
+        self.products[0]['images'] = ['/uploads/photo.png', '/uploads/back.png', '/uploads/side.png']
+        (self.project / 'uploads/back.png').write_bytes(b'back view')
+        (self.project / 'uploads/side.png').write_bytes(b'side view')
+        (self.project / 'data/catalog.json').write_text(json.dumps(self.products))
+        archive = backup.create(self.project, self.root / 'backups')
+        backup.verify(archive)
+        with tarfile.open(archive) as tar:
+            self.assertEqual(tar.extractfile('snapshot/uploads/back.png').read(), b'back view')
+            self.assertEqual(tar.extractfile('snapshot/uploads/side.png').read(), b'side view')
+            self.assertEqual(json.load(tar.extractfile('snapshot/manifest.json'))['upload_count'], 4)
+
+    def test_unsafe_gallery_photos_are_rejected(self):
+        for gallery in [['/etc/passwd'], 'not a list']:
+            (self.project / 'data/catalog.json').write_text(json.dumps([{'images': gallery}]))
+            with self.assertRaises(ValueError):
+                backup.create(self.project, self.root / 'backups')
+
     def test_missing_referenced_upload_prevents_success(self):
         (self.project / 'uploads/model.glb').unlink()
         with self.assertRaisesRegex(ValueError, 'Missing or unsafe'):
