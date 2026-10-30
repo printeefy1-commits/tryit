@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 
 if(!process.env.CAMERA_FIXTURE)throw Error('Set CAMERA_FIXTURE to a Y4M test face.');
-const child=spawn(process.execPath,['server.js'],{env:{...process.env,PORT:'3201',ADMIN_PASSWORD:crypto.randomBytes(20).toString('hex')},stdio:'pipe'});
+const child=spawn(process.execPath,['server.js'],{cwd:process.env.SMOKE_PROJECT_ROOT,env:{...process.env,PORT:'3201',ADMIN_PASSWORD:crypto.randomBytes(20).toString('hex')},stdio:'pipe'});
 let browser;
 try {
   await new Promise((resolve,reject)=>{child.stdout.once('data',resolve);child.once('exit',()=>reject(Error('Server failed')));});
@@ -39,7 +39,7 @@ try {
     const products=await page.evaluate(()=>fetch('/api/products').then(r=>r.json()));
     productIndex=products.findIndex(p=>p.id===process.env.TRYON_PRODUCT_ID);assert.ok(productIndex>=0);
   }
-  await page.locator('.product').nth(productIndex).getByRole('button').click();
+  await page.locator('.product').nth(productIndex).getByRole('button',{name:'Essayer sur mon visage'}).click();
   await page.waitForFunction(()=>document.querySelector('#try-status').textContent.startsWith('Visage détecté'),{},{timeout:60000});
   assert.equal(await page.evaluate(()=>window.cameraRequests),1,'one tap requests the camera once');
   const constraints=await page.evaluate(()=>({camera:window.cameraConstraints.video,zoom:window.zoomConstraint}));

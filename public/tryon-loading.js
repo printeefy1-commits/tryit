@@ -37,7 +37,7 @@ export async function fetchBuffer(url, {signal, label = 'Fichier', onProgress, m
   try {
     const response = await fetch(url, {signal: controller.signal});
     if (!response.ok) throw new Error(`${label} indisponible sur le serveur (HTTP ${response.status}).`);
-    const total = Number(response.headers.get('content-length')) || 0;
+    const total = Number(response.headers.get('x-model-bytes') || response.headers.get('content-length')) || 0;
     if (total > maxBytes) throw new Error(`${label} trop volumineux (${Math.round(maxBytes/1024/1024)} Mo maximum).`);
     const reader = response.body.getReader();
     const chunks = [];

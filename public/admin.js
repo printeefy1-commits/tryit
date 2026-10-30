@@ -1,4 +1,4 @@
-import {MODEL_MAX_BYTES} from './upload-config.js';
+import {MODEL_MAX_BYTES,MODEL_OPTIMIZATION_VERSION} from './upload-config.js';
 import {PhotoGallery} from './admin-gallery.js';
 const $=s=>document.querySelector(s),form=$('#editor');
 let items=[],editing='new',currentProduct=null,uploading=false,preview,previewPromise,previewVersion=0,previewLoading=false,previewError=false;
@@ -20,15 +20,21 @@ function drawList(){
     const brand=document.createElement('span');brand.className='brand';brand.textContent=p.brand;
     const title=document.createElement('strong');title.textContent=p.name;
     const badges=document.createElement('div');badges.className='admin-product-badges';
-    for(const [text,kind] of [[p.visible?'Visible':'Masqué',p.visible?'live':'hidden'],[p.model?'3D prêt':'Sans 3D',p.model?'ready':'missing']]){const badge=document.createElement('span');badge.className='admin-badge admin-badge--'+kind;badge.textContent=text;badges.append(badge);}
-    if(p.modelBytes){const bytes=document.createElement('small');bytes.textContent=size(p.modelBytes);badges.append(bytes);}
+    for(const [text,kind] of [[p.visible?'Visible':'Masqué',p.visible?'live':'hidden'],[p.modelProcessing?'Préparation 3D…':p.model?'3D prêt':'Sans 3D',p.model?'ready':'missing']]){const badge=document.createElement('span');badge.className='admin-badge admin-badge--'+kind;badge.textContent=text;badges.append(badge);}
+    if(p.modelBytes){const bytes=document.createElement('small');bytes.textContent=p.modelOptimization?`${size(p.modelBytes)} · original ${size(p.modelOriginalBytes)}`:size(p.modelBytes);badges.append(bytes);}
+    if(p.modelOptimization){const saved=document.createElement('small');saved.textContent=p.modelOptimization.status==='optimized'?`−${Math.round(100*(1-p.modelBytes/p.modelOriginalBytes))} % · optimisé`:'Déjà compact';badges.append(saved);}
     info.append(brand,title,badges);
     const actions=document.createElement('div');actions.className='admin-row-actions';
-    const edit=document.createElement('button');edit.textContent='Modifier';edit.disabled=uploading;edit.onclick=()=>open(p);
-    const del=document.createElement('button');del.textContent='Supprimer';del.className='delete-product';del.disabled=uploading;del.onclick=async()=>{
+    const edit=document.createElement('button');edit.textContent='Modifier';edit.disabled=uploading||p.modelProcessing;edit.onclick=()=>open(p);
+    const del=document.createElement('button');del.textContent='Supprimer';del.className='delete-product';del.disabled=uploading||p.modelProcessing;del.onclick=async()=>{
       if(uploading||!confirm('Supprimer cette monture ?'))return;
       try{await api('/api/admin/products/'+encodeURIComponent(p.id),{method:'DELETE'});if(editing===p.id)closeEditor();feedback('Monture supprimée.','success');await refresh();}catch(error){feedback(error.message);}
     };
+    if(p.model&&p.modelOptimization?.version!==MODEL_OPTIMIZATION_VERSION){
+      const optimize=document.createElement('button');optimize.textContent=p.modelProcessing?'Préparation…':'Alléger le GLB';optimize.disabled=uploading||p.modelProcessing;
+      optimize.onclick=async()=>{if(uploading)return;setUploading(true);feedback('Préparation du modèle pour les connexions lentes…','success');try{await api('/api/admin/products/'+encodeURIComponent(p.id)+'/optimize',{method:'POST'});await refresh();feedback('Modèle préparé. L’original est conservé.','success');}catch(error){feedback(error.message);}finally{setUploading(false);}};
+      actions.append(optimize);
+    }
     actions.append(edit,del);row.append(photo,info,actions);$('#list').append(row);
   }
   if(!visible.length){const empty=document.createElement('div');empty.className='admin-empty';empty.textContent=items.length?'Aucune monture ne correspond à votre recherche.':'Votre collection commence ici. Ajoutez votre première monture.';$('#list').append(empty);}
@@ -38,7 +44,7 @@ async function refresh(){
   items=await api('/api/admin/products');$('#stat-total').textContent=items.length;$('#stat-visible').textContent=items.filter(p=>p.visible).length;$('#stat-models').textContent=items.filter(p=>p.model).length;drawList();
 }
 function updateSave(){ $('#save-product').disabled=uploading||gallery.blocked||!!form.elements.model.files[0]&&(previewLoading||previewError); }
-function setUploading(value){uploading=value;$('#editor-fields').disabled=value;$('#new').disabled=value;$('#logout').disabled=value;for(const button of $('#list').querySelectorAll('button'))button.disabled=value;updateSave();}
+function setUploading(value){uploading=value;$('#editor-fields').disabled=value;$('#new').disabled=value;$('#logout').disabled=value;drawList();updateSave();}
 async function getPreview(){if(!previewPromise)previewPromise=import('./admin-preview.js').then(({ModelPreview})=>{preview=new ModelPreview($('#model-preview'));return preview;});return previewPromise;}
 async function renderModel(){
   const version=++previewVersion,source=form.elements.model.files[0]||currentProduct?.model;
@@ -62,7 +68,8 @@ function open(product){
   for(const [index,key] of ['rotationX','rotationY','rotationZ'].entries())form.elements[key].value=product?.modelRotation?.[index]??0;
   form.elements.productId.value=product?.id||crypto.randomUUID();form.elements.visible.checked=product?.visible??true;form.elements.imageFit.value=product?.imageFit||'contain';
   $('#editor-title').textContent=product?'Modifier la monture':'Nouvelle monture';$('#image-file-meta').textContent=product?.image?'Photo actuelle conservée tant que vous n’en choisissez pas une autre.':'Aucune photo sélectionnée.';
-  $('#model-file-meta').textContent=product?.model?(product.modelFileName||'Modèle 3D actuel')+(product.modelBytes?' · '+size(product.modelBytes):''):'Aucun modèle sélectionné.';
+  $('#model-file-meta').textContent=product?.model?(product.modelFileName||'Modèle 3D actuel')+(product.modelBytes?' · '+size(product.modelBytes):'')+(product.modelOriginalBytes?' · original '+size(product.modelOriginalBytes):''):'Aucun modèle sélectionné.';
+  const original=$('#model-original');original.hidden=!product?.modelOriginal;if(product?.modelOriginal){original.href=product.modelOriginal;original.download=product.modelFileName||'original.glb';}else original.removeAttribute('href');
   $('#upload-state').hidden=true;form.hidden=false;gallery.reset(product);updatePhotoFit();renderModel();form.scrollIntoView({behavior:'smooth',block:'start'});form.elements.name.focus({preventScroll:true});
 }
 function closeEditor(){++previewVersion;preview?.clear();previewLoading=false;previewError=false;form.hidden=true;currentProduct=null;gallery.reset();form.reset();}
@@ -75,7 +82,7 @@ function selectFile(input){
 function sendProduct(data){
   return new Promise((resolve,reject)=>{
     const xhr=new XMLHttpRequest();xhr.open('POST','/api/admin/products/'+encodeURIComponent(editing));xhr.timeout=10*60*1000;
-    xhr.upload.onprogress=event=>{if(!event.lengthComputable)return;const percent=Math.min(100,Math.round(event.loaded/event.total*100));$('#upload-progress').value=percent;$('#upload-percent').textContent=percent+' %';$('#upload-label').textContent=percent===100?'Vérification et enregistrement…':'Envoi de vos fichiers…';$('#upload-detail').textContent=percent===100?'Le serveur vérifie le GLB et prépare les photos. Gardez cette page ouverte.':`${size(event.loaded)} / ${size(event.total)} · Gardez cette page ouverte.`;};
+    xhr.upload.onprogress=event=>{if(!event.lengthComputable)return;const percent=Math.min(100,Math.round(event.loaded/event.total*100));$('#upload-progress').value=percent;$('#upload-percent').textContent=percent+' %';$('#upload-label').textContent=percent===100?(data.has('model')?'Optimisation du modèle 3D…':'Vérification et enregistrement…'):'Envoi de vos fichiers…';$('#upload-detail').textContent=percent===100?(data.has('model')?'Le serveur prépare une version plus légère et conserve votre original. Cette étape peut prendre quelques minutes.':'Le serveur prépare les photos. Gardez cette page ouverte.'):`${size(event.loaded)} / ${size(event.total)} · Gardez cette page ouverte.`;};
     xhr.onload=()=>{try{resolve(parseResponse(xhr.responseText,xhr.status));}catch(error){if(xhr.status===401)authentication(false);reject(error);}};
     xhr.onerror=()=>reject(Error('Connexion interrompue. Vérifiez votre connexion puis réessayez.'));xhr.onabort=()=>reject(Error('Envoi interrompu. Vérifiez la liste des produits avant de réessayer.'));xhr.ontimeout=()=>reject(Error('L’envoi a expiré. Vérifiez la liste des produits avant de réessayer.'));xhr.send(data);
   });
@@ -100,3 +107,5 @@ form.onsubmit=async event=>{
 };
 window.addEventListener('beforeunload',event=>{if(uploading){event.preventDefault();event.returnValue='';}});
 refresh().catch(error=>feedback(error.message));
+
+setInterval(()=>{if(!uploading&&!$('#dashboard').hidden&&items.some(p=>p.modelProcessing))refresh().catch(error=>feedback(error.message));},5000);

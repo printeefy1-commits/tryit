@@ -31,10 +31,10 @@
               <label for="image-fit">Présentation de la photo</label><select id="image-fit" name="imageFit"><option value="contain">Afficher la photo complète</option><option value="cover">Remplir la carte produit</option></select>
               <label for="model-file">Modèle 3D</label>
               <div class="upload-drop" data-file="model"><input id="model-file" type="file" name="model" accept=".glb,model/gltf-binary"><span class="upload-glyph" aria-hidden="true">+</span><strong>Choisir ou déposer un GLB</strong><span>Textures intégrées · 100 Mo maximum</span></div>
-              <p id="model-file-meta" class="file-meta">Aucun modèle sélectionné.</p>
+              <p id="model-file-meta" class="file-meta">Aucun modèle sélectionné.</p><a id="model-original" class="small" download hidden>Télécharger le GLB original</a>
               <div class="model-viewer"><canvas id="model-preview" aria-label="Aperçu du modèle 3D"></canvas><p id="preview-message">Ajoutez un GLB pour le voir sous tous les angles.</p></div>
               <div class="preview-toolbar"><span id="preview-status" class="small">Faites glisser pour tourner le modèle.</span><button id="preview-front" type="button">Face</button><button id="preview-oblique" type="button">3/4</button></div>
-              <p class="small">Un modèle léger rend l’essayage plus fluide, surtout sur téléphone.</p>
+              <p class="small">Une version plus légère est préparée automatiquement à l’enregistrement. Votre GLB original est conservé.</p>
             </div>
             <div class="editor-settings">
               <h3>02 <span>Les informations</span></h3>

@@ -47,15 +47,18 @@ test('direct GLB uploads over 25 MiB publish immediately, preserve replacements 
  try{
   const data=fields();data.set('model',new Blob([padded]),'large.glb');data.set('image',new Blob([photo]),'photo.webp');
   let response=await fetch(base+'/api/admin/products/new',{method:'POST',headers,body:data});assert.equal(response.status,200);
-  const product=await response.json();assert.equal(product.id,id);assert.ok(product.modelBytes>25*1024*1024);assert.deepEqual(product.modelRotation,[0,90,0]);
+  const product=await response.json();assert.equal(product.id,id);assert.ok(product.modelOriginalBytes>25*1024*1024);assert.ok(product.modelBytes<product.modelOriginalBytes/2);assert.equal(product.modelOptimization.version,1);assert.deepEqual(product.modelRotation,[0,90,0]);
   assert.equal(product.sourceSha256,crypto.createHash('sha256').update(padded).digest('hex'));assert.equal(product.frameWidthMm,143);
-  response=await fetch(base+product.model);assert.equal(response.status,200);assert.equal(Number(response.headers.get('content-length')),padded.length);await response.body.cancel();
+  response=await fetch(base+product.model,{headers:{'Accept-Encoding':'identity'}});assert.equal(response.status,200);assert.equal(Number(response.headers.get('content-length')),product.modelBytes);assert.match(response.headers.get('cache-control'),/immutable/);const webBytes=Buffer.from(await response.arrayBuffer());
+  response=await fetch(base+product.modelOriginal);assert.equal(response.status,200);assert.deepEqual(Buffer.from(await response.arrayBuffer()),padded,'the original is preserved byte-for-byte');
+  for(const encoding of ['br','gzip']){response=await fetch(base+product.model,{headers:{'Accept-Encoding':encoding}});assert.equal(response.headers.get('content-encoding'),encoding);assert.equal(Number(response.headers.get('x-model-bytes')),product.modelBytes);assert.ok(Number(response.headers.get('content-length'))<product.modelBytes);assert.deepEqual(Buffer.from(await response.arrayBuffer()),webBytes,'transport compression restores identical GLB bytes');}
+  response=await fetch(base+product.model,{headers:{'Accept-Encoding':'br;q=0, gzip;q=0, identity'}});assert.equal(response.headers.get('content-encoding'),null);await response.body.cancel();
   assert.ok((await(await fetch(base+'/api/products')).json()).some(p=>p.id===id&&p.model===product.model));
   response=await fetch(base+'/api/admin/products/new',{method:'POST',headers,body:fields()});assert.equal(response.status,200);assert.equal((await response.json()).id,id);
   let catalogue=await(await fetch(base+'/api/admin/products',{headers})).json();assert.equal(catalogue.filter(p=>p.id===id).length,1);
   const replacement=fields();replacement.set('model',new Blob([original]),'replacement.glb');
   response=await fetch(base+'/api/admin/products/'+id,{method:'POST',headers,body:replacement});assert.equal(response.status,200);
-  const updated=await response.json();assert.equal(updated.previousModel,product.model);assert.equal(updated.previousModelSourceSha256,product.sourceSha256);assert.equal(updated.image,product.image);
+  const updated=await response.json();assert.equal(updated.previousModel,product.model);assert.equal(updated.previousModelOriginal,product.modelOriginal);assert.notEqual(updated.modelOriginal,product.modelOriginal);assert.equal(updated.previousModelSourceSha256,product.sourceSha256);assert.equal(updated.image,product.image);
   assert.equal(updated.scale,.95);assert.equal(updated.offset,.03);assert.equal(updated.frameWidthMm,143);
   response=await fetch(base+product.model);assert.equal(response.status,200);await response.body.cancel();
  }finally{await fetch(base+'/api/admin/products/'+id,{method:'DELETE',headers});await fetch(base+'/api/logout',{method:'POST',headers});}
@@ -71,6 +74,7 @@ test('bad or external-resource GLB uploads fail without publishing files or chan
   [Buffer.from('not a model'),'bad.glb'],
   [uploadModelFixture(original,0,doc=>{doc.images=[{uri:'https://example.com/texture.png'}];}),'external.glb'],
   [uploadModelFixture(original,0,doc=>{doc.extensionsUsed=['KHR_texture_basisu'];}),'compressed.glb'],
+  [uploadModelFixture(original,0,doc=>{doc.extensionsUsed.push('EXT_unknown_test');}),'unsupported.glb'],
   [original,'wrong.txt']
  ]){
   const data=new FormData();data.set('name','Invalid upload');data.set('brand','HEAD');data.set('model',new Blob([bytes]),filename);
@@ -100,5 +104,24 @@ test('multiple photos can be uploaded, reordered and removed without replacing t
   const unchanged=(await(await fetch(base+'/api/admin/products',{headers})).json()).find(p=>p.id===id);assert.deepEqual(unchanged.images,updated.images);
   const tooMany=fields();for(let n=0;n<11;n++)tooMany.append('image',new Blob([photo]),n+'.webp');response=await fetch(base+'/api/admin/products/'+id,{method:'POST',headers,body:tooMany});assert.equal(response.status,400);
   const clear=fields();clear.set('photoOrder','[]');response=await fetch(base+'/api/admin/products/'+id,{method:'POST',headers,body:clear});assert.equal(response.status,200);const cleared=await response.json();assert.deepEqual(cleared.images,[]);assert.equal(cleared.image,undefined);assert.equal(cleared.model,saved.model);
+ }finally{await fetch(base+'/api/admin/products/'+id,{method:'DELETE',headers});await fetch(base+'/api/logout',{method:'POST',headers});}
+});
+
+
+test('existing models optimize once, preserve fitting and photos, and retain their original',async()=>{
+ const login=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});
+ const headers={cookie:login.headers.get('set-cookie').split(';')[0]},id=crypto.randomUUID();
+ const fields=new FormData();for(const [key,value] of Object.entries({name:'Existing model migration',brand:'HEAD',productId:id,scale:'1.1',offset:'0.02',frameWidthMm:'140',visible:'true'}))fields.set(key,value);
+ try{
+  let response=await fetch(base+'/api/admin/products/new',{method:'POST',headers,body:fields});assert.equal(response.status,200);
+  const cataloguePath=new URL('../data/catalog.json',import.meta.url),catalogue=JSON.parse(await fs.readFile(cataloguePath));
+  const legacy=catalogue.find(p=>p.id===id),known=catalogue.find(p=>p.id==='head-12028-models-v2');assert.ok(known?.model);
+  Object.assign(legacy,{model:known.model,sourceSha256:known.sourceSha256,modelRotation:[0,0,0],image:known.image,images:[known.image]});
+  await fs.writeFile(cataloguePath,JSON.stringify(catalogue));
+  assert.equal((await fetch(base+'/api/admin/products/'+id+'/optimize',{method:'POST'})).status,401);
+  response=await fetch(base+'/api/admin/products/'+id+'/optimize',{method:'POST',headers});assert.equal(response.status,200);const optimized=await response.json();
+  assert.equal(optimized.modelOriginal,legacy.model);assert.equal(optimized.previousModel,legacy.model);assert.ok(optimized.modelBytes<optimized.modelOriginalBytes);
+  for(const key of ['sourceSha256','scale','offset','frameWidthMm','modelRotation','image','images'])assert.deepEqual(optimized[key],legacy[key],key+' is preserved');
+  response=await fetch(base+'/api/admin/products/'+id+'/optimize',{method:'POST',headers});assert.equal(response.status,200);assert.equal((await response.json()).model,optimized.model,'already optimized models are not recompressed');
  }finally{await fetch(base+'/api/admin/products/'+id,{method:'DELETE',headers});await fetch(base+'/api/logout',{method:'POST',headers});}
 });

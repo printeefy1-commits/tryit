@@ -67,6 +67,18 @@ class BackupTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 backup.create(self.project, self.root / 'backups')
 
+    def test_original_model_and_transport_sidecars_are_preserved(self):
+        self.products[0]['modelOriginal'] = '/uploads/original.glb'
+        (self.project / 'uploads/original.glb').write_bytes(b'original untouched')
+        (self.project / 'uploads/model.glb.br').write_bytes(b'compressed br')
+        (self.project / 'uploads/model.glb.gz').write_bytes(b'compressed gzip')
+        (self.project / 'data/catalog.json').write_text(json.dumps(self.products))
+        archive = backup.create(self.project, self.root / 'backups')
+        backup.verify(archive)
+        with tarfile.open(archive) as tar:
+            for name in ['original.glb', 'model.glb.br', 'model.glb.gz']:
+                self.assertEqual(tar.extractfile('snapshot/uploads/' + name).read(), (self.project / 'uploads' / name).read_bytes())
+
     def test_missing_referenced_upload_prevents_success(self):
         (self.project / 'uploads/model.glb').unlink()
         with self.assertRaisesRegex(ValueError, 'Missing or unsafe'):

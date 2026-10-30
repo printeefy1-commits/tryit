@@ -22,9 +22,18 @@ export async function validateModel(file){
     await handle.read(binHeader,0,8,offset);
     if(offset+8>file.size||binHeader.readUInt32LE(4)!==0x004e4942||offset+8+binHeader.readUInt32LE(0)!==file.size)throw Error('Les données du GLB sont incomplètes.');
     const binaryLength=binHeader.readUInt32LE(0);
-    if(!doc.buffers?.length||doc.buffers.length!==1||!Number.isInteger(doc.buffers[0].byteLength)||doc.buffers[0].byteLength>binaryLength||doc.buffers[0].byteLength<binaryLength-3)throw Error('Les données du GLB sont incomplètes.');
+    if(!doc.buffers?.length||!Number.isInteger(doc.buffers[0].byteLength)||doc.buffers[0].byteLength>binaryLength||doc.buffers[0].byteLength<binaryLength-3)throw Error('Les données du GLB sont incomplètes.');
+    const meshopt=doc.extensionsRequired?.includes('EXT_meshopt_compression'),decodedLimit=256*1024*1024;
+    for(const buffer of doc.buffers.slice(1))if(!meshopt||buffer.extensions?.EXT_meshopt_compression?.fallback!==true||!Number.isInteger(buffer.byteLength)||buffer.byteLength<0||buffer.byteLength>decodedLimit)throw Error('Les données du GLB sont incomplètes.');
+    let decodedBytes=0;
     for(const view of doc.bufferViews||[]){
-      if(view.buffer!==0||!Number.isInteger(view.byteLength)||view.byteLength<0||!Number.isInteger(view.byteOffset??0)||(view.byteOffset??0)<0||(view.byteOffset??0)+view.byteLength>doc.buffers[0].byteLength)throw Error('Le GLB contient des références de données invalides.');
+      if(!Number.isInteger(view.buffer)||!doc.buffers[view.buffer]||!Number.isInteger(view.byteLength)||view.byteLength<0||!Number.isInteger(view.byteOffset??0)||(view.byteOffset??0)<0||(view.byteOffset??0)+view.byteLength>doc.buffers[view.buffer].byteLength)throw Error('Le GLB contient des références de données invalides.');
+      const compressed=view.extensions?.EXT_meshopt_compression;
+      if(view.buffer!==0&&!compressed)throw Error('Le GLB contient des références de données invalides.');
+      if(compressed){
+        if(compressed.buffer!==0||!Number.isInteger(compressed.byteOffset??0)||(compressed.byteOffset??0)<0||!Number.isInteger(compressed.byteLength)||compressed.byteLength<0||(compressed.byteOffset??0)+compressed.byteLength>doc.buffers[0].byteLength||!Number.isInteger(compressed.count)||compressed.count<0||!Number.isInteger(compressed.byteStride)||compressed.byteStride<1||compressed.byteStride>256||compressed.count*compressed.byteStride!==view.byteLength)throw Error('Les données Meshopt du GLB sont invalides.');
+        decodedBytes+=view.byteLength;if(decodedBytes>decodedLimit)throw Error('Le modèle décompressé est trop complexe. Réduisez le nombre de triangles.');
+      }
     }
   }finally{await handle.close();}
   const hash=crypto.createHash('sha256');for await(const chunk of createReadStream(file.path))hash.update(chunk);

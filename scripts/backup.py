@@ -39,7 +39,7 @@ def create(project, output, settings=()):
             gallery = product.get('images', [])
             if not isinstance(gallery, list):
                 raise ValueError('Invalid product photo gallery')
-            for value in [product.get('image'), product.get('model'), *gallery]:
+            for value in [product.get('image'), product.get('model'), product.get('modelOriginal'), *gallery]:
                 if not value:
                     continue
                 if not isinstance(value, str):
@@ -53,6 +53,14 @@ def create(project, output, settings=()):
                 if relative.name not in referenced:
                     shutil.copyfile(source, stage / 'uploads' / relative.name)
                     referenced.add(relative.name)
+                    if relative.suffix == '.glb':
+                        for suffix in ('.br', '.gz'):
+                            sidecar = source.with_name(source.name + suffix)
+                            if sidecar.is_symlink():
+                                raise ValueError('Unsafe compressed model reference')
+                            if sidecar.is_file():
+                                shutil.copyfile(sidecar, stage / 'uploads' / sidecar.name)
+                                referenced.add(sidecar.name)
         settings_map = []
         for index, source in enumerate(map(Path, settings)):
             if not source.is_file():

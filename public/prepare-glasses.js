@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {prepareKnownMaterials} from './tryon-materials.js';
 import {prepareKnownTempleFit} from './tryon-ears.js';
 import {prepareTempleVisibility} from './tryon-temple-visibility.js';
+import {knownFittingAnchor} from './tryon-model-profiles.js';
 
 // New uploads use a frontal fitting anchor, rather than the centre of the
 // complete object (which lies halfway down the arms). Embedded reviewed
@@ -11,11 +12,7 @@ export function prepareGlasses(gltf,product={}){
   const angles=product.modelRotation||[0,0,0],rotated=angles.some(n=>n!==0);
   let profile=gltf.asset?.extras?.lunetteCaba;
   if(!profile&&!rotated){
-    const known={
-      '046f50c9b51e6d12d0956db2d60a4b0566c6d0455e5f2a374d8af939b198e0bf':{anchor:[0,.135,.19],referenceWidth:.8858},
-      'a013cbe08e711629e2a47a62560ca87b625dca8a0f20bdd4c6eae92f67c51514':{anchor:[0,.135,.19],referenceWidth:.8858},
-      '20e5d272e646a7e33256a040568273de767d5d3d3cba2e8fe8c654382bbd7055':{anchor:[-.00085,.14,.2114],referenceWidth:.9078}
-    }[product.sourceSha256];
+    const known=knownFittingAnchor(product.sourceSha256);
     if(known){profile={...known,sourceSha256:product.sourceSha256};gltf.asset={...gltf.asset,extras:{...gltf.asset?.extras,lunetteCaba:profile}};}
   }
   const opticalProfile=!rotated?prepareKnownMaterials(gltf):null;
