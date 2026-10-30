@@ -259,7 +259,10 @@ export function updateRigidOccluders(faceMesh,headMesh,face,aspect,fit) {
       const x=rest[i*3],y=rest[i*3+1];
       const near=THREE.MathUtils.smoothstep(x*view.x,0,1);
       const band=1-THREE.MathUtils.smoothstep(y,8,10);
-      p.setX(i,x*(1-.2*lateral*near*band));
+      // The raised shaft now converges onto the upper ear instead of
+      // floating outside it. Match the lower head's lateral clearance in
+      // the near temple band; the far side and upper crown stay covered.
+      p.setX(i,x*(1-.24*lateral*near*band));
     }
     p.needsUpdate=true;cap.geometry.boundingSphere=null;
   }

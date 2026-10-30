@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {isTempleRegion} from './tryon-ears.js';
 
 // Clip a continuous rear suffix, not isolated patches of a fused AI mesh.
 // Only already prepared, reviewed source assets have this controller.
@@ -17,7 +18,7 @@ export function prepareTempleVisibility(gltf) {
       if(group.materialIndex===1){lenses.push(...ids);continue;}
       const centre=ids.reduce((v,j)=>v.add(points[j]),new THREE.Vector3()).divideScalar(3);
       const distance=-1.5-centre.z*14;
-      if(Math.abs(centre.x*14)<=5.3||distance<=0){front.push(...ids);continue;}
+      if(!isTempleRegion(centre.x*14,centre.z*14+5.5)||distance<=0){front.push(...ids);continue;}
       const side=centre.x<0?0:1;
       parts[side].push({ids,end:Math.max(...ids.map(j=>-1.5-points[j].z*14))});
       for(const j of ids){
@@ -34,7 +35,7 @@ export function prepareTempleVisibility(gltf) {
       triangles.sort((a,b)=>a.end-b.end);
       const group={start:cursor,count:triangles.length*3,materialIndex:0};geometry.groups.push(group);
       for(const t of triangles)for(const id of t.ids)ordered[cursor++]=id;
-      arms.push({group,ends:triangles.map(t=>t.end),samples:[...bins[side]].sort((a,b)=>a[0]-b[0]).map(([,box])=>{
+      arms.push({side:side===0?-1:1,group,ends:triangles.map(t=>t.end),samples:[...bins[side]].sort((a,b)=>a[0]-b[0]).map(([,box])=>{
         const point=box.getCenter(new THREE.Vector3());return {point,distance:-1.5-point.z*14};
       }),cutoff:Infinity});
     });
@@ -49,12 +50,33 @@ export function updateTempleVisibility(model,occluders) {
   model.updateMatrixWorld(true);
   for(const o of occluders){o.updateMatrixWorld(true);o.traverse(n=>{if(n.isMesh)n.geometry.computeBoundingSphere();});}
   const ray=new THREE.Raycaster(),point=new THREE.Vector3();
+  const ears=occluders.find(o=>o.visible&&o.userData.templeSupport),support=ears?.userData.templeSupport;
+  const inverseEar=ears?.matrixWorld.clone().invert();
   for(const arm of control.arms){
-    arm.cutoff=Infinity;
+    arm.cutoff=Infinity;arm.earCutoff=Infinity;
+    if(support){
+      // Use the same head-space ear as the depth mask. This handles user scale,
+      // measured frame width, translation, yaw, nods and roll together; a fixed
+      // GLB-space length would miss the ear when any of those settings change.
+      let previous;
+      for(const sample of arm.samples){
+        const local=model.localToWorld(sample.point.clone()).applyMatrix4(inverseEar);
+        if(previous&&previous.local.z>support.z&&local.z<=support.z){
+          const t=(previous.local.z-support.z)/(previous.local.z-local.z);
+          const contact=previous.local.clone().lerp(local,t);
+          if(contact.x*arm.side>0&&Math.abs(Math.abs(contact.x)-support.x)<=support.radiusX&&contact.y>=support.minY&&contact.y<=support.maxY){
+            arm.earCutoff=THREE.MathUtils.lerp(previous.distance,sample.distance,t);arm.cutoff=arm.earCutoff;
+          }
+          break;
+        }
+        previous={local,distance:sample.distance};
+      }
+    }
     for(const sample of arm.samples){
+      if(sample.distance>arm.cutoff)break;
       point.copy(sample.point);model.localToWorld(point);
       const distance=point.length();ray.set(new THREE.Vector3(),point.clone().divideScalar(distance));ray.far=distance-.06;
-      if(ray.intersectObjects(occluders,true).length){arm.cutoff=Math.max(0,sample.distance-.15);break;}
+      if(ray.intersectObjects(occluders,true).length){arm.cutoff=Math.min(arm.cutoff,Math.max(0,sample.distance-.15));break;}
     }
     let low=0,high=arm.ends.length;
     while(low<high){const middle=(low+high)>>>1;if(arm.ends[middle]<=arm.cutoff)low=middle+1;else high=middle;}

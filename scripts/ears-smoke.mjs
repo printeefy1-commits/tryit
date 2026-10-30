@@ -12,38 +12,50 @@ try {
   const page=await browser.newPage();await page.goto('http://127.0.0.1:3198');
   const report=await page.evaluate(async(modelUrl)=>{
     const THREE=await import('three'),{GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
-    const {prepareKnownTempleFit,createEarOccluders,updateEarOccluders}=await import('/tryon-ears.js');
+    const {prepareKnownTempleFit,createEarOccluders,updateEarOccluders,TEMPLE_SUPPORT,EAR_TEMPLATE}=await import('/tryon-ears.js');
     const {prepareKnownMaterials}=await import('/tryon-materials.js');
+    const {knownModelProfile}=await import('/tryon-model-profiles.js');
     const {CAMERA_FOV,projectCameraPoint}=await import('/tryon-perspective.js');
     const gltf=await new GLTFLoader().loadAsync(modelUrl);
     prepareKnownMaterials(gltf);
-    let mesh;gltf.scene.traverse(o=>{if(o.isMesh)mesh=o;});gltf.scene.updateMatrixWorld(true);
-    const positions=mesh.geometry.attributes.position.array.slice(),uv=mesh.geometry.attributes.uv?.array.slice();
-    const normals=mesh.geometry.attributes.normal.array.slice(),tangents=mesh.geometry.attributes.tangent?.array.slice();
-    const indices=mesh.geometry.index.array.slice(),material=mesh.material;
-    const lensVertices=new Set();for(const group of mesh.geometry.groups)if(group.materialIndex===1){
-      for(let j=group.start;j<group.start+group.count;j++)lensVertices.add(indices[j]);
-    }
-    const adjustment=prepareKnownTempleFit(gltf),after=mesh.geometry.attributes.position;
+    const records=[];gltf.scene.updateMatrixWorld(true);
+    gltf.scene.traverse(mesh=>{if(!mesh.isMesh)return;
+      const indices=mesh.geometry.index.array.slice(),lensVertices=new Set();
+      for(const group of mesh.geometry.groups)if(group.materialIndex===1)for(let j=group.start;j<group.start+group.count;j++)lensVertices.add(indices[j]);
+      records.push({mesh,positions:mesh.geometry.attributes.position.array.slice(),uv:mesh.geometry.attributes.uv?.array.slice(),
+        normals:mesh.geometry.attributes.normal.array.slice(),tangents:mesh.geometry.attributes.tangent?.array.slice(),indices,material:mesh.material,lensVertices});
+    });
+    const adjustment=prepareKnownTempleFit(gltf);
     const profile=gltf.asset.extras.lunetteCaba,anchor=new THREE.Vector3(...profile.anchor),scale=14/profile.referenceWidth;
     let unchangedFront=true,unchangedFrontShading=true,maxLift=0,minLift=Infinity,maxSplay=0,minSplay=Infinity,maxExtension=0,minExtension=Infinity;
-    const supportHeights=[];
-    for(let i=0;i<after.count;i++){
-      const before=new THREE.Vector3().fromArray(positions,i*3).applyMatrix4(mesh.matrixWorld).sub(anchor).multiplyScalar(scale).add(new THREE.Vector3(0,2.625,5.5));
-      const point=new THREE.Vector3().fromBufferAttribute(after,i).applyMatrix4(mesh.matrixWorld).sub(anchor).multiplyScalar(scale).add(new THREE.Vector3(0,2.625,5.5));
-      if(lensVertices.has(i)||before.z>=4||Math.abs(before.x)<=5.3){
-        unchangedFront&&=positions[i*3]===after.getX(i)&&positions[i*3+1]===after.getY(i)&&positions[i*3+2]===after.getZ(i);
-        for(let j=0;j<3;j++)unchangedFrontShading&&=normals[i*3+j]===mesh.geometry.attributes.normal.array[i*3+j];
-        if(tangents)for(let j=0;j<4;j++)unchangedFrontShading&&=tangents[i*4+j]===mesh.geometry.attributes.tangent.array[i*4+j];
+    const supportHeights=[],contactVertices=[0,0],closestContact=[{distance:Infinity},{distance:Infinity}];let stretchError=0,preserved=true;const tuning=knownModelProfile(gltf).templeFit;
+    for(const {mesh,positions,uv,normals,tangents,indices,material,lensVertices} of records){
+      const after=mesh.geometry.attributes.position;
+      for(let i=0;i<after.count;i++){
+        const before=new THREE.Vector3().fromArray(positions,i*3).applyMatrix4(mesh.matrixWorld).sub(anchor).multiplyScalar(scale).add(new THREE.Vector3(0,2.625,5.5));
+        const point=new THREE.Vector3().fromBufferAttribute(after,i).applyMatrix4(mesh.matrixWorld).sub(anchor).multiplyScalar(scale).add(new THREE.Vector3(0,2.625,5.5));
+        if(lensVertices.has(i)||before.z>=4||(Math.abs(before.x)<=5.3&&(Math.abs(before.x)<=TEMPLE_SUPPORT.innerX||before.z>=-2))){
+          unchangedFront&&=positions[i*3]===after.getX(i)&&positions[i*3+1]===after.getY(i)&&positions[i*3+2]===after.getZ(i);
+          for(let j=0;j<3;j++)unchangedFrontShading&&=normals[i*3+j]===mesh.geometry.attributes.normal.array[i*3+j];
+          if(tangents)for(let j=0;j<4;j++)unchangedFrontShading&&=tangents[i*4+j]===mesh.geometry.attributes.tangent.array[i*4+j];
+        }
+        maxLift=Math.max(maxLift,point.y-before.y);minLift=Math.min(minLift,point.y-before.y);
+        const splay=Math.sign(before.x)*(point.x-before.x);
+        maxSplay=Math.max(maxSplay,splay);minSplay=Math.min(minSplay,splay);
+        maxExtension=Math.max(maxExtension,before.z-point.z);minExtension=Math.min(minExtension,before.z-point.z);
+        if(!lensVertices.has(i)&&before.z<4&&(Math.abs(before.x)>5.3||(Math.abs(before.x)>TEMPLE_SUPPORT.innerX&&before.z< -2))){
+          const previousZ=before.z-(Math.abs(before.x)>5.3?tuning.extensionCm*THREE.MathUtils.smoothstep(4-before.z,0,8):0);
+          stretchError=Math.max(stretchError,Math.abs((4-point.z)-(4-previousZ)*1.2));
+        }
+        if(Math.abs(point.x)>5.5&&point.z>TEMPLE_SUPPORT.contactZ+.3&&point.z<TEMPLE_SUPPORT.contactZ+.6)supportHeights.push(point.y);
+        if(Math.abs(point.z-TEMPLE_SUPPORT.contactZ)<.2){
+          const distance=((Math.abs(point.x)-EAR_TEMPLATE.x)/EAR_TEMPLATE.radiusX)**2+((point.y-EAR_TEMPLATE.y)/EAR_TEMPLATE.radiusY)**2+((point.z-EAR_TEMPLATE.z)/EAR_TEMPLATE.radiusZ)**2;
+          const side=point.x<0?0:1;if(distance<closestContact[side].distance)closestContact[side]={distance,point:point.toArray()};if(distance<1)contactVertices[side]++;
+        }
       }
-      maxLift=Math.max(maxLift,point.y-before.y);minLift=Math.min(minLift,point.y-before.y);
-      const splay=Math.sign(before.x)*(point.x-before.x);
-      maxSplay=Math.max(maxSplay,splay);minSplay=Math.min(minSplay,splay);
-      maxExtension=Math.max(maxExtension,before.z-point.z);minExtension=Math.min(minExtension,before.z-point.z);
-      if(Math.abs(before.x)>5.5&&before.z> -5&&before.z< -4)supportHeights.push(point.y);
+      preserved&&=indices.every((n,i)=>n===mesh.geometry.index.array[i])&&(!uv||uv.every((n,i)=>n===mesh.geometry.attributes.uv.array[i]))&&material===mesh.material;
     }
     const repeat=prepareKnownTempleFit(gltf),unknown=prepareKnownTempleFit({asset:{extras:{}},scene:gltf.scene});
-    const preserved=indices.every((n,i)=>n===mesh.geometry.index.array[i])&&(!uv||uv.every((n,i)=>n===mesh.geometry.attributes.uv.array[i]))&&material===mesh.material;
     const scene=new THREE.Scene(),ears=createEarOccluders();scene.add(ears);
     const probe=new THREE.Mesh(new THREE.PlaneGeometry(.4,.4),new THREE.MeshBasicMaterial({color:0xffffff,toneMapped:false}));scene.add(probe);
     const camera=new THREE.PerspectiveCamera(CAMERA_FOV,1,.1,500),renderer=new THREE.WebGLRenderer({alpha:true,antialias:false});
@@ -65,19 +77,21 @@ try {
     }
     renderer.dispose();target.dispose();
     return {adjustment,unchangedFront,unchangedFrontShading,maxLift,minLift,maxSplay,minSplay,maxExtension,minExtension,preserved,repeat,unknown,
-      minimumSupportHeight:Math.min(...supportHeights),probes};
+      minimumSupportHeight:Math.min(...supportHeights),supportVertices:supportHeights.length,contactVertices,closestContact,stretchError,probes};
   },process.env.TRYON_MODEL_URL||'/products/head-12028/head-12028-generated.glb');
   assert.ok(report.adjustment?.movedVertices>1000);assert.ok(report.unchangedFront&&report.unchangedFrontShading&&report.preserved);
-  const maxima=process.env.TRYON_MODEL_URL==='/products/models-v2/head-blue.glb'?[1.05,.9,.5]:[1.35,1,1.5];
-  assert.ok(Math.abs(report.maxLift-maxima[0])<.001&&report.minLift> -1e-5);
-  assert.ok(Math.abs(report.maxExtension-maxima[2])<.001&&report.minExtension> -1e-5,'straight run extends rearwards while the front stays fixed');
-  assert.ok(Math.abs(report.maxSplay-maxima[1])<.001&&report.minSplay> -1e-5,'rear arms open outwards without moving their front hinges');
-  assert.ok(report.minimumSupportHeight>4,'temple should approach the upper ear rather than its opening');
+  assert.equal(report.adjustment.lengthScale,1.2);assert.ok(report.stretchError<.00001,'rear reach is 20% longer around the fixed hinge');
+  assert.ok(Math.abs(report.maxLift-report.adjustment.maxLiftCm)<.001&&report.minLift> -1e-5);
+  assert.ok(Math.abs(report.maxExtension-report.adjustment.maxExtensionCm)<.001&&report.minExtension> -1e-5);
+  assert.ok(Math.abs(report.maxSplay-report.adjustment.maxSplayCm)<.001&&report.minSplay> -1e-5);
+  assert.ok(report.supportVertices>20&&report.minimumSupportHeight>4.35,'lower edge rests above the upper ear, not across the ear opening');
+  // Contact must not depend on how densely the exporter tessellated a hook.
+  assert.ok(report.contactVertices.every(count=>count>0)&&report.closestContact.every(p=>p.distance<.98),'both real arms must physically enter the estimated ear volume: '+JSON.stringify({count:report.contactVertices,closest:report.closestContact}));
   assert.equal(report.repeat,null);assert.equal(report.unknown,null);
   for(const probe of report.probes){
     assert.ok(probe.unmasked,`${probe.name}: reference probe must be visible`);
     assert.equal(probe.masked,!probe.hidden,`${probe.name}, side ${probe.side}, roll ${probe.roll}: wrong ear occlusion`);
   }
   console.log('PASS: rear temples rise and open around the head; front/lenses, UVs and materials stay intact; ear masks hide rear hooks and preserve shafts above/in front of ears on both sides.');
-  console.log({movedVertices:report.adjustment.movedVertices,maxLiftCm:report.maxLift,maxSplayCm:report.maxSplay,probes:report.probes.length});
+  console.log({movedVertices:report.adjustment.movedVertices,maxLiftCm:report.maxLift,maxSplayCm:report.maxSplay,contactVertices:report.contactVertices,probes:report.probes.length});
 } finally {await browser?.close();child.kill();}

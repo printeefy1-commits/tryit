@@ -46,14 +46,16 @@ try {
       updateRigidOccluders(faceMask,head,face,1,fit);updateEarOccluders(ears,fit);
       model.position.copy(fit.position);model.quaternion.copy(fit.quaternion);updateTempleVisibility(model,[faceMask,head,ears]);
       const near=cameraDirectionInHead(fit).x<0?0:1;
-      integration.push({side,pitch,nearCutoff:control.arms[near].cutoff,farCutoff:control.arms[1-near].cutoff});
+      const nearEarCutoff=control.arms[near].earCutoff,nearCutoff=control.arms[near].cutoff,farCutoff=control.arms[1-near].cutoff,isolated={};
+      for(const [name,mask] of [['face',faceMask],['head',head],['ears',ears]]){updateTempleVisibility(model,[mask]);isolated[name]=control.arms[near].cutoff;}
+      integration.push({side,pitch,nearCutoff,nearEarCutoff,farCutoff,isolated});
     }
     return {empty,clipped,full,cutoff,nearIntact,reentry,prefix,restored,integration,repeatSame,unknown};
   },process.env.TRYON_MODEL_URL||'/products/head-12028/head-12028-generated.glb');
   assert.ok(report.empty&&report.restored&&report.nearIntact&&report.repeatSame&&report.unknown);
   assert.ok(report.clipped>0&&report.clipped<report.full&&Number.isFinite(report.cutoff));
   assert.ok(report.reentry&&report.prefix,'a later exposed fragment must stay clipped after the first occlusion');
-  for(const r of report.integration)assert.ok(r.nearCutoff>=10,'extended near shaft must reach the rearward upper-ear support before clipping: '+JSON.stringify(r));
+  for(const r of report.integration)assert.ok(Number.isFinite(r.nearEarCutoff)&&r.nearCutoff>=r.nearEarCutoff-.35,'extended near shaft must reach the rearward upper-ear support before clipping: '+JSON.stringify(r));
   console.log('PASS: continuous temple prefix clips reappearing rear islands, preserves the opposite shaft, and restores the full arm when clear.');
   console.log(report);
 } finally {await browser?.close();child.kill();}
