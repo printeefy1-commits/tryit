@@ -15,7 +15,7 @@ try{
  const urls=process.env.TRYON_MODEL_URL?[process.env.TRYON_MODEL_URL]:['/products/head-12028/head-12028-generated.glb','/products/models-v2/head-blue.glb'];
  if(process.env.OPTIMIZED_MODEL_FIXTURE){const bytes=await fs.readFile(process.env.OPTIMIZED_MODEL_FIXTURE);await page.route('**/support-fixture.glb',route=>route.fulfill({body:bytes,contentType:'model/gltf-binary'}));urls.splice(0,urls.length,'/support-fixture.glb');}
  await page.goto('http://127.0.0.1:3211');
- const result=await page.evaluate(async({urls,unknown})=>{
+ const result=await page.evaluate(async({urls,unknown,templeLengthScale})=>{
   const THREE=await import('three'),{createModelLoader}=await import('/model-loader.js'),{prepareGlasses}=await import('/prepare-glasses.js');
   const {createFaceOccluder,createHeadOccluder,updateRigidOccluders,cameraDirectionInHead}=await import('/tryon-fit.js');
   const {createEarOccluders,updateEarOccluders,EAR_TEMPLATE,TEMPLE_SUPPORT}=await import('/tryon-ears.js');
@@ -29,7 +29,7 @@ try{
   for(const url of urls){
    const gltf=await createModelLoader().loadAsync(url);
    if(unknown)delete gltf.asset.extras;
-   const model=prepareGlasses(gltf),control=model.userData.templeVisibility;
+   const model=prepareGlasses(gltf,{templeLengthScale}),control=model.userData.templeVisibility;
    if(unknown&&model.userData.fitting.templeFit?.method!=='geometry')throw Error('Admin upload must actually activate geometry fitting');
    if(!control?.arms.length)throw Error('Fixture must have temple control');
    const scene=new THREE.Scene();scene.background=new THREE.Color(0xedf1f5);scene.environment=environment.texture;scene.add(model);
@@ -58,7 +58,7 @@ try{
    const geometries=new Set(),materials=new Set(),textures=new Set();scene.traverse(node=>{if(node.geometry)geometries.add(node.geometry);for(const material of Array.isArray(node.material)?node.material:node.material?[node.material]:[]){materials.add(material);for(const value of Object.values(material))if(value?.isTexture)textures.add(value);}});for(const value of [...geometries,...materials,...textures])value.dispose();
   }
   renderer.dispose();room.dispose();environment.dispose();pmrem.dispose();return output;
- },{urls,unknown:!!process.env.UNKNOWN_MODEL});
+ },{urls,unknown:!!process.env.UNKNOWN_MODEL,templeLengthScale:Number(process.env.TEMPLE_LENGTH_SCALE||1)});
  const output=process.env.SUPPORT_PREVIEW_DIR||'/tmp/tryit-temple-support';await fs.mkdir(output,{recursive:true});
  for(const [index,product] of result.entries())for(const view of product.views){
   for(const arm of view.ends){assert.ok(Number.isFinite(arm.earCutoff),'rear hook must have an anatomical end at the ear');assert.ok(arm.cutoff<=arm.earCutoff+1e-6);assert.ok(arm.maxVisibleDistance<=arm.cutoff+1e-6,'no isolated triangle may survive behind the ear');}

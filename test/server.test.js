@@ -125,3 +125,19 @@ test('existing models optimize once, preserve fitting and photos, and retain the
   response=await fetch(base+'/api/admin/products/'+id+'/optimize',{method:'POST',headers});assert.equal(response.status,200);assert.equal((await response.json()).model,optimized.model,'already optimized models are not recompressed');
  }finally{await fetch(base+'/api/admin/products/'+id,{method:'DELETE',headers});await fetch(base+'/api/logout',{method:'POST',headers});}
 });
+
+
+test('per-product +20% temple length persists, supports resetting and rejects unsupported values',async()=>{
+ const login=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});
+ const headers={cookie:login.headers.get('set-cookie').split(';')[0]},id=crypto.randomUUID();
+ const fields=(length)=>{const data=new FormData();data.set('name','Temple length option');data.set('brand','HEAD');data.set('visible','true');data.set('productId',id);if(length!==undefined)data.set('templeLengthScale',length);return data;};
+ try{
+  const save=body=>fetch(base+'/api/admin/products/'+id,{method:'POST',headers,body});
+  let response=await fetch(base+'/api/admin/products/new',{method:'POST',headers,body:fields('1.2')});assert.equal(response.status,200);assert.equal((await response.json()).templeLengthScale,1.2);
+  assert.equal((await(await fetch(base+'/api/products')).json()).find(p=>p.id===id).templeLengthScale,1.2,'customer mirror receives the saved setting');
+  response=await save(fields());assert.equal(response.status,200);assert.equal((await response.json()).templeLengthScale,1.2,'edits from older clients preserve the option');
+  for(const value of ['0','1.1','2','NaN','']){response=await save(fields(value));assert.equal(response.status,400);}
+  assert.equal((await(await fetch(base+'/api/admin/products',{headers})).json()).find(p=>p.id===id).templeLengthScale,1.2,'invalid edits leave the product unchanged');
+  response=await save(fields('1'));assert.equal(response.status,200);assert.equal((await response.json()).templeLengthScale,1,'original length can be restored without replacing the GLB');
+ }finally{await fetch(base+'/api/admin/products/'+id,{method:'DELETE',headers});await fetch(base+'/api/logout',{method:'POST',headers});}
+});

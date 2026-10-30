@@ -16,7 +16,7 @@ export function prepareGlasses(gltf,product={}){
     if(known){profile={...known,sourceSha256:product.sourceSha256};gltf.asset={...gltf.asset,extras:{...gltf.asset?.extras,lunetteCaba:profile}};}
   }
   const opticalProfile=!rotated?prepareKnownMaterials(gltf):null;
-  if(!rotated)prepareKnownTempleFit(gltf);
+  if(!rotated)prepareKnownTempleFit(gltf,null,{templeLengthScale:product.templeLengthScale});
   let templeVisibility=!rotated?prepareTempleVisibility(gltf):null;
   const oriented=new THREE.Group();oriented.add(gltf.scene);
   oriented.rotation.set(...angles.map(THREE.MathUtils.degToRad));oriented.updateMatrixWorld(true);
@@ -40,7 +40,7 @@ export function prepareGlasses(gltf,product={}){
     anchor.z=box.max.z-referenceWidth*.025;
   }
   if(!gltf.scene.userData.templeFitApplied){
-    prepareKnownTempleFit(gltf,{anchor:anchor.toArray(),referenceWidth});
+    prepareKnownTempleFit(gltf,{anchor:anchor.toArray(),referenceWidth},{templeLengthScale:product.templeLengthScale});
     templeVisibility=prepareTempleVisibility(gltf);
   }
   const shifted=new THREE.Group();shifted.add(oriented);shifted.position.copy(anchor).negate();

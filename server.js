@@ -75,6 +75,8 @@ app.post('/api/admin/products/:id',admin,receiveUpload,async(req,res)=>{
  if(req.aborted||res.destroyed)throw Error('Envoi interrompu.');
  const name=String(req.body.name||'').trim().slice(0,100),brand=String(req.body.brand||'').trim().slice(0,100);if(!name||!brand)throw Error('Nom et marque requis.');
  const scale=Number(req.body.scale??1),offset=Number(req.body.offset??0);if(!Number.isFinite(scale)||scale<0.3||scale>3||!Number.isFinite(offset)||Math.abs(offset)>1)throw Error('Réglage invalide.');
+ const hasTempleLength=req.body.templeLengthScale!==undefined,templeLengthScale=Number(req.body.templeLengthScale??1);
+ if(hasTempleLength&&![1,1.2].includes(templeLengthScale))throw Error('Longueur des branches invalide : choisissez la longueur originale ou +20 %.');
  const hasWidth=req.body.frameWidthMm!==undefined,frameWidthMm=String(req.body.frameWidthMm??'').trim()===''?null:Number(req.body.frameWidthMm);
  if(hasWidth&&frameWidthMm!==null&&(!Number.isFinite(frameWidthMm)||frameWidthMm<80||frameWidthMm>200))throw Error('Largeur extérieure invalide : utilisez des millimètres, entre 80 et 200.');
  const hasRotation=['rotationX','rotationY','rotationZ'].some(k=>req.body[k]!==undefined);
@@ -100,6 +102,7 @@ app.post('/api/admin/products/:id',admin,receiveUpload,async(req,res)=>{
    Object.assign(p,{name,brand,visible:req.body.visible==='true',scale,offset});
    if(hasWidth){if(frameWidthMm===null)delete p.frameWidthMm;else p.frameWidthMm=frameWidthMm;}
    if(hasRotation)p.modelRotation=rotation;
+   if(hasTempleLength)p.templeLengthScale=templeLengthScale;
    if(hasFit)p.imageFit=imageFit;
    if(Object.keys(modelMetadata).length){if(p.modelOriginal)p.previousModelOriginal=p.modelOriginal;if(p.sourceSha256)p.previousModelSourceSha256=p.sourceSha256;Object.assign(p,modelMetadata);p.modelSource='Ajout depuis l’administration';}
    return p;

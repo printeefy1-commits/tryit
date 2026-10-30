@@ -12,7 +12,7 @@ const bytes=await fs.readFile(new URL('../public/products/models-v2/head-blue.gl
 const productionSource='a9f40b82bcc1314c2024bcfb570b2675ff55d3e7052e0c006ba77054f6f90325';
 async function fixture(mode){
  const gltf=await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length),'');
- delete gltf.asset.extras;
+ if(mode!=='reviewed')delete gltf.asset.extras;
  if(['fused','multiple','nonindexed'].includes(mode)){
   const meshes=[];gltf.scene.updateMatrixWorld(true);gltf.scene.traverse(m=>{if(m.isMesh)meshes.push(m);});
   const geometry=mergeGeometries(meshes.map(m=>{const g=m.geometry.clone().applyMatrix4(m.matrixWorld);g.deleteAttribute('color');return g;}),true);
@@ -41,16 +41,16 @@ function assignment(mesh){
  }
  for(const list of result.values())list.sort();return result;
 }
-for(const mode of ['separate','fused','multiple','nonindexed','rotated','short'])test(`admin upload: ${mode} gets real temple fitting and ear clipping without a reviewed fingerprint`,async()=>{
+for(const lengthScale of [1,1.2])for(const mode of ['separate','fused','multiple','nonindexed','rotated','short','reviewed'])test(`admin upload: ${mode}, length ${lengthScale} gets real temple fitting and ear clipping without a reviewed fingerprint`,async()=>{
  const gltf=await fixture(mode),records=[];
  gltf.scene.traverse(mesh=>{if(mesh.isMesh)records.push({mesh,positions:mesh.geometry.attributes.position.clone(),uv:mesh.geometry.attributes.uv?.array.slice(),assignment:assignment(mesh)});});
- const product={name:'12028',sourceSha256:productionSource,modelRotation:mode==='rotated'?[0,0,90]:[0,0,0]};
+ const product={name:'12028',sourceSha256:productionSource,modelRotation:mode==='rotated'?[0,0,90]:[0,0,0],templeLengthScale:lengthScale};
  const model=prepareGlasses(gltf,product),fitting=model.userData.fitting,control=model.userData.templeVisibility;
- assert.equal(fitting.templeFit?.method,'geometry');assert.ok(fitting.templeFit.movedVertices>1000);
+ assert.equal(fitting.templeFit?.method,mode==='reviewed'?'reviewed-source':'geometry');assert.ok(fitting.templeFit.movedVertices>1000);
  assert.equal(fitting.templeFit.adjustment,'hinge-rotation');
- assert.equal(fitting.templeFit.lengthScale,1,'changing hinge angle must never stretch the authored arm');assert.equal(fitting.templeFitSkipped,null);
+ assert.equal(fitting.templeFit.lengthScale,lengthScale,'only the selected length option may extend the authored arm');assert.equal(fitting.templeFitSkipped,null);
  assert.deepEqual([...new Set(control.arms.map(a=>a.side))].sort(),[-1,1]);
- assert.equal(gltf.asset.extras,undefined,'unknown uploads must never acquire a forged reviewed profile');
+ if(mode!=='reviewed')assert.equal(gltf.asset.extras,undefined,'unknown uploads must never acquire a forged reviewed profile');
  model.updateMatrixWorld(true);let unchanged=0,moved=0;const rigidSamples=[[],[]];
  // Compare source vertices in the oriented pre-normalization coordinates.
  const oriented=gltf.scene.parent;oriented.updateMatrixWorld(true);
@@ -67,15 +67,15 @@ for(const mode of ['separate','fused','multiple','nonindexed','rotated','short']
     const side=point.x<0?0:1,hinge=fitting.templeFit.hinges[side],pivot=new THREE.Vector3(...hinge.pivot);
     const after=new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position,i).applyMatrix4(transform).sub(new THREE.Vector3(...fitting.anchor)).multiplyScalar(14/fitting.referenceWidth);
     point.y+=2.625;point.z+=5.5;after.y+=2.625;after.z+=5.5;
-    const expected=point.clone().sub(pivot).applyQuaternion(new THREE.Quaternion(...hinge.quaternion)).add(pivot);
-    assert.ok(after.distanceTo(expected)<2e-6,'every arm vertex follows ONE hinge rotation, including the original hook');
+    const expected=point.clone().sub(pivot).multiply(new THREE.Vector3(1,1,lengthScale)).applyQuaternion(new THREE.Quaternion(...hinge.quaternion)).add(pivot);
+    assert.ok(after.distanceTo(expected)<2e-6,'every arm vertex follows the selected axial length and ONE hinge rotation, including the original hook');
     if(i%97===0)rigidSamples[side].push({before:point.clone(),after});
    }
   }
  }
  assert.ok(unchanged>1000&&moved>1000);
  for(const samples of rigidSamples)for(let i=1;i<samples.length;i++){
-  const a=samples[i-1],b=samples[i];assert.ok(Math.abs(a.before.distanceTo(b.before)-a.after.distanceTo(b.after))<3e-6,'shaft thickness, hook curvature and distances are preserved');
+  const a=samples[i-1],b=samples[i];assert.ok(Math.abs(a.before.clone().sub(b.before).multiply(new THREE.Vector3(1,1,lengthScale)).length()-a.after.distanceTo(b.after))<3e-6,'no local bending: distances change only by the selected longitudinal scale');
  }
  for(const [pitch,yaw,roll] of [[0,0,0],[.5,1,.4],[.5,-1,-.4],[1,0,0]]){
   const fit={translation:new THREE.Vector3(0,-1,-35),quaternion:new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch,yaw,roll)),metricScale:1};

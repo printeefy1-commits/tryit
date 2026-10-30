@@ -55,14 +55,16 @@ function protectedLensVertices(mesh,reviewed){
 }
 
 // Lift each temple as one rigid part around its hinge. A single rotation is
-// used for every rear vertex, including the original hook: no envelopes,
-// stretching or vertex-dependent bending may change its shape.
-export function prepareKnownTempleFit(gltf,geometryProfile=null) {
+// used for every rear vertex, including the original hook: no envelopes or
+// vertex-dependent bending may change its shape. Optional +20% length is a
+// single axial scale before rotation; thickness and the front stay unchanged.
+export function prepareKnownTempleFit(gltf,geometryProfile=null,{templeLengthScale=1}={}) {
   const profile=geometryProfile||gltf.asset?.extras?.lunetteCaba,reviewed=!geometryProfile;
   if((reviewed&&!knownModelProfile(gltf))||gltf.scene.userData.templeFitApplied)return null;
   if(!Array.isArray(profile?.anchor)||profile.anchor.length!==3||!profile.anchor.every(Number.isFinite)
     ||!Number.isFinite(profile.referenceWidth)||profile.referenceWidth<=0)return null;
   const anchor=new THREE.Vector3(...profile.anchor),point=new THREE.Vector3(),offset=new THREE.Vector3(0,2.625,5.5);
+  const lengthScale=templeLengthScale===1.2?1.2:1;
   const sourcePerCm=profile.referenceWidth/14,records=[],sides=[{bins:new Map(),count:0,minZ:Infinity},{bins:new Map(),count:0,minZ:Infinity}];
   let unsupported=false;
   gltf.scene.updateMatrixWorld(true);
@@ -90,9 +92,10 @@ export function prepareKnownTempleFit(gltf,geometryProfile=null) {
     const pivot=root.getCenter(new THREE.Vector3());pivot.z=TEMPLE_SUPPORT.hingeZ;
     // Aim the original lower shaft (ahead of the hook) at the upper ear.
     // Sampling supplies one angle; it never supplies per-vertex offsets.
-    const targetZ=Math.max(TEMPLE_SUPPORT.contactZ+.5,side.minZ+(frontZ-side.minZ)*.18);
+    const targetZ=Math.max(TEMPLE_SUPPORT.hingeZ+(TEMPLE_SUPPORT.contactZ+.5-TEMPLE_SUPPORT.hingeZ)/lengthScale,side.minZ+(frontZ-side.minZ)*.18);
     const section=bins.reduce((best,box)=>Math.abs(box.getCenter(new THREE.Vector3()).z-targetZ)<Math.abs(best.getCenter(new THREE.Vector3()).z-targetZ)?box:best);
     const reference=section.getCenter(new THREE.Vector3());reference.y=section.min.y;
+    reference.z=pivot.z+(reference.z-pivot.z)*lengthScale;
     const dy=reference.y-pivot.y,dz=reference.z-pivot.z,radius=Math.hypot(dy,dz);
     const desired=THREE.MathUtils.clamp((TEMPLE_SUPPORT.lowerEdgeY-pivot.y)/radius,-1,1);
     const angle=THREE.MathUtils.clamp(Math.asin(desired)-Math.atan2(dy,-dz),0,THREE.MathUtils.degToRad(25));
@@ -105,7 +108,7 @@ export function prepareKnownTempleFit(gltf,geometryProfile=null) {
     const yaw=THREE.MathUtils.clamp(Math.atan2(aimed.x,-aimed.z)-Math.asin(THREE.MathUtils.clamp(desiredX/horizontal,-1,1)),-.2,.2);
     const quaternion=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),yaw).multiply(pitch);
     const rotation=new THREE.Matrix4().makeTranslation(...pivot.toArray()).multiply(new THREE.Matrix4().makeRotationFromQuaternion(quaternion))
-      .multiply(new THREE.Matrix4().makeTranslation(-pivot.x,-pivot.y,-pivot.z));
+      .multiply(new THREE.Matrix4().makeScale(1,1,lengthScale)).multiply(new THREE.Matrix4().makeTranslation(-pivot.x,-pivot.y,-pivot.z));
     return {side:sideSign,pivot,angle,yaw,quaternion,rotation,reference};
   });
   const toCanonical=new THREE.Matrix4().makeTranslation(...offset.toArray())
@@ -133,7 +136,7 @@ export function prepareKnownTempleFit(gltf,geometryProfile=null) {
   }
   gltf.scene.userData.templeFitApplied=true;
   gltf.scene.userData.templeFitProfile={anchor:profile.anchor,referenceWidth:profile.referenceWidth,reviewed};
-  const adjustment={estimated:true,method:reviewed?'reviewed-source':'geometry',adjustment:'hinge-rotation',lengthScale:1,
+  const adjustment={estimated:true,method:reviewed?'reviewed-source':'geometry',adjustment:'hinge-rotation',lengthScale,
     supportLowerEdgeY:TEMPLE_SUPPORT.lowerEdgeY,maxLiftCm,maxSplayCm,maxExtensionCm,movedVertices,
     hinges:hinges.map(({side,pivot,angle,yaw,quaternion,reference})=>({side,pivot:pivot.toArray(),angleDegrees:THREE.MathUtils.radToDeg(angle),openingDegrees:THREE.MathUtils.radToDeg(yaw),quaternion:quaternion.toArray(),reference:reference.toArray()}))};
   gltf.scene.userData.templeFit=adjustment;return adjustment;

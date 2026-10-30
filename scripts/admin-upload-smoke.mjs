@@ -27,11 +27,16 @@ try{
   await page.locator('[name=model]').setInputFiles(process.env.UPLOAD_GLB_FIXTURE||{name:'direct-model.glb',mimeType:'model/gltf-binary',buffer:model});
   await page.waitForFunction(()=>document.querySelector('#preview-status').textContent.startsWith('Modèle prêt'),{},{timeout:120000});
   assert.ok(await page.locator('#save-product').isEnabled());
+  assert.equal(await page.locator('[name=templeLengthScale]').inputValue(),'1','original length remains the default');
   const frontal=await page.locator('#model-preview').screenshot();
   await page.locator('.orientation-settings').evaluate(details=>{details.open=true;});await page.locator('[name=rotationY]').fill('90');await page.locator('#apply-orientation').click();
   await page.waitForFunction(()=>document.querySelector('#preview-status').textContent.startsWith('Modèle prêt'),{},{timeout:120000});
   assert.notDeepEqual(await page.locator('#model-preview').screenshot(),frontal,'orientation settings change the actual 3D view');
   await page.locator('[name=rotationY]').fill('0');await page.locator('#apply-orientation').click();await page.waitForFunction(()=>document.querySelector('#preview-status').textContent.startsWith('Modèle prêt'),{},{timeout:120000});await page.locator('.orientation-settings').evaluate(details=>{details.open=false;});
+  const originalLength=await page.locator('#model-preview').screenshot();
+  await page.locator('[name=templeLengthScale]').selectOption('1.2');
+  await page.waitForFunction(()=>document.querySelector('#preview-status').textContent.startsWith('Modèle prêt'),{},{timeout:120000});
+  assert.notDeepEqual(await page.locator('#model-preview').screenshot(),originalLength,'+20% changes the actual model preview');
   assert.equal(await page.evaluate(()=>window.cameraRequests||0),0,'3D preview does not open a webcam');
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile editor has no horizontal overflow');await page.setViewportSize({width:1440,height:1000});
   await page.screenshot({path:'/tmp/tryit-admin-upload-preview.png',fullPage:true});
@@ -39,11 +44,12 @@ try{
   const saved=page.waitForResponse(r=>r.url().includes('/api/admin/products/new')&&r.request().method()==='POST');await page.getByRole('button',{name:'Enregistrer',exact:true}).click();
   const response=await saved;assert.equal(response.status(),200);
   const catalogue=await(await context.request.get('http://127.0.0.1:3206/api/admin/products')).json(),product=catalogue.find(p=>p.id===productId);assert.ok(product);
-  await page.getByText('Monture enregistrée.',{exact:true}).waitFor();assert.ok(product.modelOriginalBytes>25*1024*1024);assert.ok(product.modelBytes<product.modelOriginalBytes/2);assert.equal(product.modelOptimization.version,1);assert.equal(product.frameWidthMm,143);assert.equal(product.scale,.95);assert.equal(product.imageFit,'cover');
+  await page.getByText('Monture enregistrée.',{exact:true}).waitFor();assert.ok(product.modelOriginalBytes>25*1024*1024);assert.ok(product.modelBytes<product.modelOriginalBytes/2);assert.equal(product.modelOptimization.version,1);assert.equal(product.frameWidthMm,143);assert.equal(product.scale,.95);assert.equal(product.imageFit,'cover');assert.equal(product.templeLengthScale,1.2);
   assert.deepEqual(product.modelRotation,[0,0,0]);assert.equal(await page.evaluate(()=>window.sawUploadProgress),true);assert.equal(await page.evaluate(()=>window.sawOptimization),true);
   assert.equal(product.images.length,2);assert.equal(product.image,product.images[0]);assert.ok(product.image.endsWith('.webp'),'the selected primary photo is used');
   if(process.env.HEIC_FIXTURE)assert.ok(product.images.some(src=>src.endsWith('.jpg')),'HEIC becomes a browser-readable JPEG');
   const row=page.locator('.row').filter({hasText:name});await row.getByRole('button',{name:'Modifier',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#preview-status').textContent.startsWith('Modèle prêt'),{},{timeout:120000});
+  assert.equal(await page.locator('[name=templeLengthScale]').inputValue(),'1.2','saved length is restored when editing');
   assert.equal(await page.locator('[name=frameWidthMm]').inputValue(),'143');assert.equal(await page.locator('.admin-photo-tile').count(),2);await page.getByRole('button',{name:'Annuler',exact:true}).click();
   const shop=await context.newPage(),requestedModels=[];shop.on('request',r=>{if(r.url().endsWith('.glb'))requestedModels.push(new URL(r.url()).pathname);});shop.on('pageerror',e=>errors.push(e.message));await shop.goto('http://127.0.0.1:3206');
   const card=shop.locator('.product').filter({has:shop.getByRole('heading',{name,exact:true})});await card.locator('.product-art>img').evaluate(img=>img.decode());
@@ -54,11 +60,22 @@ try{
   const diagnostics=await shop.evaluate(()=>window.tryonDiagnostics());
   assert.equal(diagnostics.sourceSha256,product.sourceSha256);
   assert.equal(diagnostics.fitting.templeFit?.method,'geometry','a new optimized admin upload must activate temple deformation, not just display');
-  assert.equal(diagnostics.fitting.templeFit.adjustment,'hinge-rotation');assert.equal(diagnostics.fitting.templeFit.lengthScale,1);
+  assert.equal(diagnostics.fitting.templeFit.adjustment,'hinge-rotation');assert.equal(diagnostics.fitting.templeFit.lengthScale,1.2,'customer camera uses the per-product length option');
   assert.ok(diagnostics.fitting.templeFit.movedVertices>1000&&diagnostics.templeGroups>=2,'ear clipping must be active on the uploaded mesh');
   assert.equal(await shop.locator(`.model-choice[data-model-id="${product.id}"]`).getAttribute('aria-pressed'),'true');await shop.screenshot({path:'/tmp/tryit-admin-upload-camera.png'});
   await shop.getByRole('button',{name:'Fermer',exact:true}).click();assert.ok(requestedModels.includes(product.model));assert.ok(!requestedModels.includes(product.modelOriginal));assert.deepEqual(errors,[]);
-  console.log('PASS: multiple-photo/large GLB upload and automatic optimization, primary selection, 3D preview, responsive editor, saved gallery, customer photo switching, model carousel and live camera.'+(process.env.HEIC_FIXTURE?' HEIC conversion verified.':''));
+  // Change an existing product's option without uploading its model again.
+  await row.getByRole('button',{name:'Modifier',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('#preview-status').textContent.startsWith('Modèle prêt'),{},{timeout:120000});
+  await page.locator('[name=templeLengthScale]').selectOption('1');
+  await page.waitForFunction(()=>document.querySelector('#preview-status').textContent.startsWith('Modèle prêt'),{},{timeout:120000});
+  const reset=page.waitForResponse(r=>r.url().endsWith('/api/admin/products/'+productId)&&r.request().method()==='POST');
+  await page.getByRole('button',{name:'Enregistrer',exact:true}).click();
+  const resetResponse=await reset;assert.equal(resetResponse.status(),200);const resetProduct=await resetResponse.json();
+  assert.equal(resetProduct.templeLengthScale,1);assert.equal(resetProduct.model,product.model);assert.equal(resetProduct.modelOriginal,product.modelOriginal);
+  await page.getByText('Monture enregistrée.',{exact:true}).waitFor();
+  assert.deepEqual(errors,[]);
+  console.log('PASS: multiple-photo/large GLB upload and automatic optimization, primary selection, 3D preview, responsive editor, saved gallery, customer photo switching, model carousel, live camera with +20% branches and resetting length without another GLB upload.'+(process.env.HEIC_FIXTURE?' HEIC conversion verified.':''));
 }finally{
   if(productId&&context)await context.request.delete('http://127.0.0.1:3206/api/admin/products/'+productId).catch(()=>{});
   await browser?.close();child.kill();

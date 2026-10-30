@@ -54,7 +54,7 @@ async function renderModel(){
   previewLoading=true;previewError=false;updateSave();$('#preview-message').hidden=false;$('#preview-message').textContent='Préparation de l’aperçu 3D…';$('#preview-status').textContent='Chargement du modèle…';
   try{
     const viewer=await getPreview();if(version!==previewVersion)return;
-    const loaded=await viewer.load(source,rotation,(got,total)=>{if(version===previewVersion)$('#preview-status').textContent=total?`Chargement : ${Math.round(got/total*100)} %`:'Chargement…';});
+    const loaded=await viewer.load(source,rotation,(got,total)=>{if(version===previewVersion)$('#preview-status').textContent=total?`Chargement : ${Math.round(got/total*100)} %`:'Chargement…';},{templeLengthScale:Number(form.elements.templeLengthScale.value)});
     if(version!==previewVersion||!loaded)return;
     $('#preview-message').hidden=true;$('#preview-status').textContent='Modèle prêt · faites glisser pour le tourner.';
   }catch(error){if(version!==previewVersion)return;previewError=true;$('#preview-message').hidden=false;$('#preview-message').textContent=error.message;$('#preview-status').textContent='Aperçu indisponible. Choisissez un GLB valide.';}
@@ -64,7 +64,7 @@ function updatePhotoFit(){ $('#photo-preview').classList.toggle('photo-cover',fo
 function open(product){
   if(uploading)return;
   ++previewVersion;preview?.clear();currentProduct=product||null;editing=product?.id||'new';form.reset();
-  for(const key of ['name','brand','scale','offset','frameWidthMm'])form.elements[key].value=product?.[key]??({scale:1,offset:0}[key]??'');
+  for(const key of ['name','brand','scale','offset','frameWidthMm','templeLengthScale'])form.elements[key].value=product?.[key]??({scale:1,offset:0,templeLengthScale:1}[key]??'');
   for(const [index,key] of ['rotationX','rotationY','rotationZ'].entries())form.elements[key].value=product?.modelRotation?.[index]??0;
   form.elements.productId.value=product?.id||crypto.randomUUID();form.elements.visible.checked=product?.visible??true;form.elements.imageFit.value=product?.imageFit||'contain';
   $('#editor-title').textContent=product?'Modifier la monture':'Nouvelle monture';$('#image-file-meta').textContent=product?.image?'Photo actuelle conservée tant que vous n’en choisissez pas une autre.':'Aucune photo sélectionnée.';
@@ -92,6 +92,7 @@ $('#new').onclick=()=>open();$('#cancel').onclick=()=>{if(!uploading)closeEditor
 $('#product-search').oninput=drawList;
 for(const name of ['image','model'])form.elements[name].onchange=()=>selectFile(form.elements[name]);
 form.elements.imageFit.onchange=updatePhotoFit;
+form.elements.templeLengthScale.onchange=renderModel;
 for(const zone of document.querySelectorAll('.upload-drop')){
   zone.ondragover=event=>{event.preventDefault();if(!uploading)zone.classList.add('drag-over');};zone.ondragleave=()=>zone.classList.remove('drag-over');
   zone.ondrop=event=>{event.preventDefault();zone.classList.remove('drag-over');if(uploading||!event.dataTransfer.files.length)return;const transfer=new DataTransfer();for(const file of [...event.dataTransfer.files].slice(0,zone.dataset.file==='image'?undefined:1))transfer.items.add(file);const input=form.elements[zone.dataset.file];input.files=transfer.files;selectFile(input);};

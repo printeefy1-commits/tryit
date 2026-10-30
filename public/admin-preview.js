@@ -48,7 +48,7 @@ export class ModelPreview{
     this.buffer=null;this.source=null;
     if(this.renderer)this.renderer.clear();
   }
-  async load(source,rotation=[0,0,0],onProgress=()=>{}){
+  async load(source,rotation=[0,0,0],onProgress=()=>{},{templeLengthScale=1}={}){
     const version=++this.version;this.controller?.abort();const controller=new AbortController();this.controller=controller;
     const current=()=>version===this.version&&!controller.signal.aborted;
     let gltf,model;
@@ -68,7 +68,7 @@ export class ModelPreview{
       if(!current()){dispose(gltf.scene);return false;}
       const hash=crypto.subtle?Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',buffer))).map(b=>b.toString(16).padStart(2,'0')).join(''):undefined;
       if(!current()){dispose(gltf.scene);return false;}
-      model=prepareGlasses(gltf,{modelRotation:rotation,sourceSha256:hash});
+      model=prepareGlasses(gltf,{modelRotation:rotation,sourceSha256:hash,templeLengthScale});
       if(this.model){this.scene.remove(this.model);dispose(this.model);}
       this.model=model;this.scene.add(model);this.source=source;this.buffer=buffer;this.view('oblique');this.play();return true;
     }catch(error){if(model)dispose(model);else if(gltf)dispose(gltf.scene);if(current())throw error;return false;}
