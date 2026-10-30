@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // Clip a continuous rear suffix, not isolated patches of a fused AI mesh.
-// Only the already prepared, known HEAD asset has this controller.
+// Only already prepared, reviewed source assets have this controller.
 export function prepareTempleVisibility(gltf) {
   if(!gltf.scene.userData.templeFitApplied)return null;
   if(gltf.scene.userData.templeVisibility)return gltf.scene.userData.templeVisibility;

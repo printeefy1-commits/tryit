@@ -1,5 +1,7 @@
 # Modèle fourni par le propriétaire — release model-v1
 
+Identification corrigée par le propriétaire : **HEAD 12029** pour `model-v1`, **HEAD 12028** pour `models-v2`. Les anciens noms de fichiers et l’identifiant `head-12028-col400` restent conservés pour préserver les références du catalogue. L’import `models-v2` corrige uniquement le nom initial affiché, sans remplacer les réglages ni les noms personnalisés. [Ajout de HEAD 12028 et déploiement (arabe)](models-v2-ar.md).
+
 ## Origine vérifiée
 
 - Release : https://github.com/printeefy1-commits/tryit/releases/tag/model-v1

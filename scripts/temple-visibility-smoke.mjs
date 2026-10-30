@@ -10,12 +10,12 @@ try {
   browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,
     args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
   const page=await browser.newPage();await page.goto('http://127.0.0.1:3199');
-  const report=await page.evaluate(async()=>{
+  const report=await page.evaluate(async(modelUrl)=>{
     const THREE=await import('three'),{GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
     const {prepareKnownMaterials}=await import('/tryon-materials.js');
     const {prepareKnownTempleFit}=await import('/tryon-ears.js');
     const {prepareTempleVisibility,updateTempleVisibility}=await import('/tryon-temple-visibility.js');
-    const gltf=await new GLTFLoader().loadAsync('/products/head-12028/head-12028-generated.glb');
+    const gltf=await new GLTFLoader().loadAsync(modelUrl);
     prepareKnownMaterials(gltf);prepareKnownTempleFit(gltf);
     const control=prepareTempleVisibility(gltf),profile=gltf.asset.extras.lunetteCaba;
     const repeatSame=prepareTempleVisibility(gltf)===control;
@@ -49,11 +49,11 @@ try {
       integration.push({side,pitch,nearCutoff:control.arms[near].cutoff,farCutoff:control.arms[1-near].cutoff});
     }
     return {empty,clipped,full,cutoff,nearIntact,reentry,prefix,restored,integration,repeatSame,unknown};
-  });
+  },process.env.TRYON_MODEL_URL||'/products/head-12028/head-12028-generated.glb');
   assert.ok(report.empty&&report.restored&&report.nearIntact&&report.repeatSame&&report.unknown);
   assert.ok(report.clipped>0&&report.clipped<report.full&&Number.isFinite(report.cutoff));
   assert.ok(report.reentry&&report.prefix,'a later exposed fragment must stay clipped after the first occlusion');
-  for(const r of report.integration)assert.ok(r.nearCutoff>=10,'extended near shaft must reach the rearward upper-ear support before clipping');
+  for(const r of report.integration)assert.ok(r.nearCutoff>=10,'extended near shaft must reach the rearward upper-ear support before clipping: '+JSON.stringify(r));
   console.log('PASS: continuous temple prefix clips reappearing rear islands, preserves the opposite shaft, and restores the full arm when clear.');
   console.log(report);
 } finally {await browser?.close();child.kill();}

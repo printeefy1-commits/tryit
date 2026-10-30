@@ -1,6 +1,6 @@
 import * as THREE from 'three';
+import {knownModelProfile} from './tryon-model-profiles.js';
 
-const SOURCE_SHA='20e5d272e646a7e33256a040568273de767d5d3d3cba2e8fe8c654382bbd7055';
 export const HEAD_MEASUREMENTS=Object.freeze({reportedSpanMm:110,endpoints:'owner-described bridge-to-bridge span; exterior width not established',calibrated:false});
 
 function hull(points) {
@@ -16,12 +16,15 @@ function inside(point,polygon,margin=0) {
   });
 }
 
-// Profile of the owner's known generated mesh, not arbitrary uploads. Keep
+// Profiles of the owner's reviewed generated meshes, not arbitrary uploads. Keep
 // its source colours/markings, separate its optical shading from the frame,
 // and replace noisy generated lens normals with a coherent curved surface.
 export function prepareKnownMaterials(gltf) {
   const profile=gltf.asset?.extras?.lunetteCaba;
-  if(profile?.sourceSha256!==SOURCE_SHA)return null;
+  const known=knownModelProfile(gltf);
+  if(!known)return null;
+  if(!Array.isArray(profile.anchor)||profile.anchor.length!==3||!profile.anchor.every(Number.isFinite)
+    ||!Number.isFinite(profile.referenceWidth)||profile.referenceWidth<=0)return null;
   const anchor=new THREE.Vector3(...profile.anchor),point=new THREE.Vector3();
   const bounds=[new THREE.Box3(),new THREE.Box3()];
   let lensTriangles=0,frameTriangles=0;
@@ -84,11 +87,12 @@ export function prepareKnownMaterials(gltf) {
     geometry.addGroup(0,frame.length,0);geometry.addGroup(frame.length,lenses.length,1);
     const sourceColour=mesh.material.map;
     const frameMaterial=new THREE.MeshPhysicalMaterial({
-      name:'HEAD 12028 — original frame colour and markings',color:mesh.material.color.clone(),map:sourceColour,
-      metalness:0,roughness:.55,clearcoat:.1,clearcoatRoughness:.4,envMapIntensity:.3
+      name:known.label+' — original frame colour and markings',color:mesh.material.color.clone(),map:sourceColour,
+      metalness:0,roughness:.55,clearcoat:.1,clearcoatRoughness:.4,envMapIntensity:.3,
+      side:known.frameDoubleSided?THREE.DoubleSide:THREE.FrontSide
     });
     const lensMaterial=new THREE.MeshPhysicalMaterial({
-      name:'HEAD 12028 — original lens colour with smooth optical normals',color:mesh.material.color.clone(),map:sourceColour,
+      name:known.label+' — original lens colour with smooth optical normals',color:mesh.material.color.clone(),map:sourceColour,
       metalness:0,roughness:.18,clearcoat:.8,clearcoatRoughness:.16,
       transparent:true,opacity:.96,depthWrite:false,side:THREE.FrontSide,envMapIntensity:.35
     });
@@ -102,7 +106,7 @@ export function prepareKnownMaterials(gltf) {
   const widths=bounds.map(b=>b.max.x-b.min.x),apertureWidth=(widths[0]+widths[1])/2;
   // Neither the printed example nor an ambiguously measured 11-cm span is a
   // verified exterior front width. The admin can enter that measurement later.
-  return {measurements:HEAD_MEASUREMENTS,lensTriangles,frameTriangles,
+  return {measurements:known.measurements,lensTriangles,frameTriangles,
     frameWidthCm:14,
     derivedApertureWidthCm:apertureWidth,estimated:true};
 }

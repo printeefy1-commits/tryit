@@ -79,7 +79,9 @@ La sauvegarde quotidienne vers S3 (sans clés d'accès statiques), son installat
 
 ## Premier produit photo-référencé
 
-Le prototype 3D **HEAD 12028 Col.400** et sa photo sont fournis dans `public/products/head-12028/`. [Fidélité, régénération et import sur EC2](docs/head-12028.md). L'import est additif et conserve les produits existants. Ce modèle a des dimensions estimées ; il n'est pas une reproduction mesurée.
+Identification corrigée par le propriétaire : `model-v1` = **HEAD 12029**, `models-v2` = **HEAD 12028**. Les chemins historiques `head-12028` ci-dessous sont conservés pour la compatibilité du catalogue.
+
+Le prototype 3D initialement nommé **HEAD 12028 Col.400** et sa photo sont fournis dans `public/products/head-12028/`. [Fidélité, régénération et import sur EC2](docs/head-12028.md). L'import est additif et conserve les produits existants. Ce modèle a des dimensions estimées ; il n'est pas une reproduction mesurée.
 
 Pour remplacer le prototype par une reconstruction photogrammétrique : [workflow RealityScan et capture des photos](docs/realityscan-workflow.md). Le suivi applique la pose rigide MediaPipe, un ajustement par le visage canonique et des masques de profondeur du visage et du crâne ; ces corrections ne garantissent ni une géométrie produit fidèle ni une mesure physique.
 
@@ -100,3 +102,5 @@ Le contrôle `node scripts/temple-visibility-smoke.mjs` vérifie la visibilité 
 Le rendu HEAD conserve les couleurs et détails du GLB fourni, avec des normales de verres lissées, une opacité plus proche du fichier de référence et un éclairage adouci. [Qualité visuelle, comparaison et limites (arabe)](docs/model-appearance-ar.md).
 
 Sur téléphone, «Essayer» ouvre une caméra qui remplit la fenêtre et demande directement l'autorisation. Les commandes restent superposées, le champ complet de la caméra et la capture restent sans recadrage. Une copie floutée du même cadre caméra remplit les espaces autour de l'image, sans agrandir le visage. La fermeture coupe la caméra et efface cette copie. Sur ordinateur, le bouton d'activation reste disponible. [Expérience mobile et validation (arabe)](docs/mobile-tryon-ar.md).
+
+La release `models-v2` ajoute HEAD 12028 avec son propre profil de pose, ses textures et un aperçu. Le propriétaire a identifié la monture `model-v1` comme HEAD 12029 : son nom initial est corrigé en conservant ses identifiants, fichiers et réglages. L'import hors ligne `node scripts/import-models-v2.mjs` ajoute uniquement les produits absents et conserve les réglages du catalogue existant. [Préparation, validation et déploiement (arabe)](docs/models-v2-ar.md).

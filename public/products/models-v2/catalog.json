@@ -1,0 +1,12 @@
+[
+  {
+    "id": "head-12028-models-v2",
+    "name": "12028",
+    "brand": "HEAD",
+    "model": "head-blue.glb",
+    "image": "preview.webp",
+    "sourceFile": "ec5ed36dafdf1cf4c19d5a81c96b7cf6.glb",
+    "sourceSha256": "a013cbe08e711629e2a47a62560ca87b625dca8a0f20bdd4c6eae92f67c51514",
+    "sourceRelease": "https://github.com/printeefy1-commits/tryit/releases/tag/models-v2"
+  }
+]

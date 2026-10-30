@@ -16,7 +16,7 @@ test('photo model import adds a valid self-contained GLB, preserves products and
   assert.equal(await importProduct(root),true);
   const items=JSON.parse(await fs.readFile(path.join(root,'data/catalog.json'),'utf8'));
   assert.deepEqual(items[0],original);assert.equal(items.length,2);
-  const product=items[1];assert.equal(product.estimatedDimensions,true);
+  const product=items[1];assert.equal(product.name,'12029');assert.equal(product.estimatedDimensions,true);
   const glb=await fs.readFile(path.join(root,product.model));
   assert.equal(glb.readUInt32LE(8),glb.length);
   const json=JSON.parse(glb.subarray(20,20+glb.readUInt32LE(12)).toString());

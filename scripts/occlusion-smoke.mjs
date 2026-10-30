@@ -17,7 +17,7 @@ try {
     args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
   const page=await browser.newPage();
   await page.goto('http://127.0.0.1:3195');
-  const report=await page.evaluate(async()=>{
+  const report=await page.evaluate(async(modelUrl)=>{
     const THREE=await import('three');
     const {GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
     const {createFaceOccluder,createHeadOccluder,updateRigidOccluders,cameraDirectionInHead}=await import('/tryon-fit.js');
@@ -26,7 +26,7 @@ try {
     const {estimatePerspectiveFit,projectCameraPoint,CAMERA_FOV}=await import('/tryon-perspective.js');
     const canonical=(await(await fetch('/models/canonical-face.json')).json()).vertices;
     const triangles=(await(await fetch('/models/face-topology.json')).json()).triangles;
-    const gltf=await new GLTFLoader().loadAsync('/products/head-12028/head-12028-generated.glb');
+    const gltf=await new GLTFLoader().loadAsync(modelUrl);
     prepareKnownMaterials(gltf);
     prepareKnownTempleFit(gltf);
     const {anchor,referenceWidth}=gltf.asset.extras.lunetteCaba;
@@ -170,7 +170,7 @@ try {
       report.push({name,view:view.toArray(),reference,masked,faceOnly,headOnly,nasalProbes,scalpProbes,retained:masked.map((n,i)=>reference[i]?n/reference[i]:null),near:view.x<0?2:3,far:view.x<0?3:2});
     }
     renderer.dispose();target.dispose();return report;
-  });
+  },process.env.TRYON_MODEL_URL||'/products/head-12028/head-12028-generated.glb');
   console.table(report.map(row=>({pose:row.name,
     frame:Math.round(row.retained[0]*100)+'%',bridge:Math.round(row.retained[1]*100)+'%',
     near:Math.round(row.retained[row.near]*100)+'%',far:Math.round(row.retained[row.far]*100)+'%'})));

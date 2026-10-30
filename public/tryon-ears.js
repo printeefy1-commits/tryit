@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-
-const HEAD_SOURCE_SHA='20e5d272e646a7e33256a040568273de767d5d3d3cba2e8fe8c654382bbd7055';
+import {knownModelProfile} from './tryon-model-profiles.js';
 
 // MediaPipe's face mesh has no ear landmarks. These are deliberately labelled
 // template dimensions in canonical cm, not detected ear edges or measurements.
@@ -30,7 +29,8 @@ export function updateEarOccluders(ears,fit) {
 // intact. This is an aesthetic fitting adjustment, not a new measured product.
 export function prepareKnownTempleFit(gltf) {
   const profile=gltf.asset?.extras?.lunetteCaba;
-  if(profile?.sourceSha256!==HEAD_SOURCE_SHA||gltf.scene.userData.templeFitApplied)return null;
+  const tuning=knownModelProfile(gltf)?.templeFit;
+  if(!tuning||gltf.scene.userData.templeFitApplied)return null;
   if(!Array.isArray(profile.anchor)||profile.anchor.length!==3||!profile.anchor.every(Number.isFinite)
     ||!Number.isFinite(profile.referenceWidth)||profile.referenceWidth<=0)return null;
   const anchor=new THREE.Vector3(...profile.anchor),point=new THREE.Vector3();
@@ -57,16 +57,16 @@ export function prepareKnownTempleFit(gltf) {
       if(lensVertices[i]||Math.abs(x)<=5.3||z>=4)continue;
       // Two gradual sections keep the shaft nearly level; a single large
       // lift across the entire arm makes an artificial hump before the ear.
-      const lift=.55*THREE.MathUtils.smoothstep(4-z,0,7)
-        +.8*THREE.MathUtils.smoothstep(-2.5-z,0,3);
+      const lift=tuning.firstLiftCm*THREE.MathUtils.smoothstep(4-z,0,7)
+        +tuning.rearLiftCm*THREE.MathUtils.smoothstep(-2.5-z,0,3);
       if(lift<1e-6)continue;
       // The generated arms also fold inward behind a wide front. A bounded
       // rear splay opens them around the head, so mild turns do not hide the
       // whole near shaft behind the front rim. Hinges/lenses stay unchanged.
-      const splay=THREE.MathUtils.smoothstep(4-z,0,5.5);
+      const splay=tuning.splayCm*THREE.MathUtils.smoothstep(4-z,0,5.5);
       // Extend the straight run before the downward hook. Moving the whole
       // frame would shift the lenses/nose; this smoothly adds rear reach only.
-      const extension=1.5*THREE.MathUtils.smoothstep(4-z,0,8);
+      const extension=tuning.extensionCm*THREE.MathUtils.smoothstep(4-z,0,8);
       point.x+=Math.sign(x)*splay*sourcePerCm;
       point.z-=extension*sourcePerCm;
       point.y+=lift*sourcePerCm;point.applyMatrix4(inverse);
@@ -93,5 +93,5 @@ export function prepareKnownTempleFit(gltf) {
   });
   if(!movedVertices)return null;
   gltf.scene.userData.templeFitApplied=true;
-  return {estimated:true,maxLiftCm:1.35,maxSplayCm:1,maxExtensionCm:1.5,movedVertices};
+  return {estimated:true,maxLiftCm:tuning.firstLiftCm+tuning.rearLiftCm,maxSplayCm:tuning.splayCm,maxExtensionCm:tuning.extensionCm,movedVertices};
 }

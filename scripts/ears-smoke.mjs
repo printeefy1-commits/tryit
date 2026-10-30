@@ -10,12 +10,12 @@ try {
   browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,
     args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
   const page=await browser.newPage();await page.goto('http://127.0.0.1:3198');
-  const report=await page.evaluate(async()=>{
+  const report=await page.evaluate(async(modelUrl)=>{
     const THREE=await import('three'),{GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
     const {prepareKnownTempleFit,createEarOccluders,updateEarOccluders}=await import('/tryon-ears.js');
     const {prepareKnownMaterials}=await import('/tryon-materials.js');
     const {CAMERA_FOV,projectCameraPoint}=await import('/tryon-perspective.js');
-    const gltf=await new GLTFLoader().loadAsync('/products/head-12028/head-12028-generated.glb');
+    const gltf=await new GLTFLoader().loadAsync(modelUrl);
     prepareKnownMaterials(gltf);
     let mesh;gltf.scene.traverse(o=>{if(o.isMesh)mesh=o;});gltf.scene.updateMatrixWorld(true);
     const positions=mesh.geometry.attributes.position.array.slice(),uv=mesh.geometry.attributes.uv.array.slice();
@@ -66,11 +66,12 @@ try {
     renderer.dispose();target.dispose();
     return {adjustment,unchangedFront,unchangedFrontShading,maxLift,minLift,maxSplay,minSplay,maxExtension,minExtension,preserved,repeat,unknown,
       minimumSupportHeight:Math.min(...supportHeights),probes};
-  });
+  },process.env.TRYON_MODEL_URL||'/products/head-12028/head-12028-generated.glb');
   assert.ok(report.adjustment?.movedVertices>1000);assert.ok(report.unchangedFront&&report.unchangedFrontShading&&report.preserved);
-  assert.ok(report.maxLift>1.3&&report.maxLift<1.351&&report.minLift> -1e-5);
-  assert.ok(report.maxExtension>1.49&&report.maxExtension<1.501&&report.minExtension> -1e-5,'straight run extends rearwards while the front stays fixed');
-  assert.ok(report.maxSplay>.99&&report.maxSplay<1.001&&report.minSplay> -1e-5,'rear arms open outwards without moving their front hinges');
+  const maxima=process.env.TRYON_MODEL_URL==='/products/models-v2/head-blue.glb'?[1.05,.9,.5]:[1.35,1,1.5];
+  assert.ok(Math.abs(report.maxLift-maxima[0])<.001&&report.minLift> -1e-5);
+  assert.ok(Math.abs(report.maxExtension-maxima[2])<.001&&report.minExtension> -1e-5,'straight run extends rearwards while the front stays fixed');
+  assert.ok(Math.abs(report.maxSplay-maxima[1])<.001&&report.minSplay> -1e-5,'rear arms open outwards without moving their front hinges');
   assert.ok(report.minimumSupportHeight>4,'temple should approach the upper ear rather than its opening');
   assert.equal(report.repeat,null);assert.equal(report.unknown,null);
   for(const probe of report.probes){

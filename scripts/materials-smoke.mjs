@@ -8,10 +8,10 @@ try {
   await new Promise((resolve,reject)=>{child.stdout.once('data',resolve);child.once('exit',()=>reject(Error('Server failed')));});
   browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
   const page=await browser.newPage();await page.goto('http://127.0.0.1:3196');
-  const report=await page.evaluate(async()=>{
+  const report=await page.evaluate(async(modelUrl)=>{
     const THREE=await import('three'),{GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
     const {prepareKnownMaterials}=await import('/tryon-materials.js');
-    const gltf=await new GLTFLoader().loadAsync('/products/head-12028/head-12028-generated.glb');
+    const gltf=await new GLTFLoader().loadAsync(modelUrl);
     let mesh;gltf.scene.traverse(o=>{if(o.isMesh)mesh=o;});
     const originalCount=mesh.geometry.index.count,positions=mesh.geometry.attributes.position.array.slice();
     const sourceColour=mesh.material.map,sourceNormals=mesh.geometry.attributes.normal.array.slice();let sourceDisposed=false;
@@ -40,7 +40,7 @@ try {
       sourceColoursPreserved:materials[0].map===sourceColour&&materials[1].map===sourceColour&&!sourceDisposed,
       frameNormalsPreserved:sourceNormals.every((v,i)=>v===mesh.geometry.attributes.normal.array[i]),minLensNormalZ,
       noBakedNormalMaps:!materials[0].normalMap&&!materials[1].normalMap,frameOpaque:!materials[0].transparent};
-  });
+  },process.env.TRYON_MODEL_URL||'/products/head-12028/head-12028-generated.glb');
   assert.ok(report.profile);assert.equal(report.count,report.originalCount);assert.ok(report.unchanged);
   assert.equal(report.groups.reduce((n,g)=>n+g.count,0),report.count);
   assert.ok(report.hits.every(i=>i===1),'lens interiors must contain no opaque baked-reflection islands');
