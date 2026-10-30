@@ -16,6 +16,27 @@ function inside(point,polygon,margin=0) {
   });
 }
 
+function prepareAuthoredMaterials(gltf,known){
+  if(gltf.scene.userData.authoredMaterialsPrepared)return null;
+  const meshes=[];gltf.scene.traverse(mesh=>{if(mesh.isMesh)meshes.push(mesh);});
+  if(meshes.some(mesh=>Array.isArray(mesh.material)||!['frame','Blue_Lenses'].includes(mesh.material.name)||!mesh.geometry.index))return null;
+  const frame=meshes.find(mesh=>mesh.material.name==='frame')?.material;
+  const lenses=meshes.find(mesh=>mesh.material.name==='Blue_Lenses')?.material;
+  if(!frame||!lenses)return null;
+  let frameTriangles=0,lensTriangles=0;
+  // The owner already separated and coloured these surfaces. Keep their
+  // materials, vertex colours, opacity and normals exactly as loaded. Only
+  // standardize the material groups used by the fitting/visibility controller.
+  for(const mesh of meshes){
+    const lens=mesh.material.name==='Blue_Lenses',count=mesh.geometry.index.count;
+    mesh.geometry.clearGroups();mesh.geometry.addGroup(0,count,lens?1:0);
+    mesh.material=[frame,lenses];
+    if(lens)lensTriangles+=count/3;else frameTriangles+=count/3;
+  }
+  gltf.scene.userData.authoredMaterialsPrepared=true;
+  return {measurements:known.measurements,lensTriangles,frameTriangles,frameWidthCm:14,estimated:true,authoredMaterials:true};
+}
+
 // Profiles of the owner's reviewed generated meshes, not arbitrary uploads. Keep
 // its source colours/markings, separate its optical shading from the frame,
 // and replace noisy generated lens normals with a coherent curved surface.
@@ -25,6 +46,7 @@ export function prepareKnownMaterials(gltf) {
   if(!known)return null;
   if(!Array.isArray(profile.anchor)||profile.anchor.length!==3||!profile.anchor.every(Number.isFinite)
     ||!Number.isFinite(profile.referenceWidth)||profile.referenceWidth<=0)return null;
+  if(known.authoredMaterials)return prepareAuthoredMaterials(gltf,known);
   const anchor=new THREE.Vector3(...profile.anchor),point=new THREE.Vector3();
   const bounds=[new THREE.Box3(),new THREE.Box3()];
   let lensTriangles=0,frameTriangles=0;

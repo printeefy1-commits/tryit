@@ -18,8 +18,8 @@ try {
     const gltf=await new GLTFLoader().loadAsync(modelUrl);
     prepareKnownMaterials(gltf);
     let mesh;gltf.scene.traverse(o=>{if(o.isMesh)mesh=o;});gltf.scene.updateMatrixWorld(true);
-    const positions=mesh.geometry.attributes.position.array.slice(),uv=mesh.geometry.attributes.uv.array.slice();
-    const normals=mesh.geometry.attributes.normal.array.slice(),tangents=mesh.geometry.attributes.tangent.array.slice();
+    const positions=mesh.geometry.attributes.position.array.slice(),uv=mesh.geometry.attributes.uv?.array.slice();
+    const normals=mesh.geometry.attributes.normal.array.slice(),tangents=mesh.geometry.attributes.tangent?.array.slice();
     const indices=mesh.geometry.index.array.slice(),material=mesh.material;
     const lensVertices=new Set();for(const group of mesh.geometry.groups)if(group.materialIndex===1){
       for(let j=group.start;j<group.start+group.count;j++)lensVertices.add(indices[j]);
@@ -34,7 +34,7 @@ try {
       if(lensVertices.has(i)||before.z>=4||Math.abs(before.x)<=5.3){
         unchangedFront&&=positions[i*3]===after.getX(i)&&positions[i*3+1]===after.getY(i)&&positions[i*3+2]===after.getZ(i);
         for(let j=0;j<3;j++)unchangedFrontShading&&=normals[i*3+j]===mesh.geometry.attributes.normal.array[i*3+j];
-        for(let j=0;j<4;j++)unchangedFrontShading&&=tangents[i*4+j]===mesh.geometry.attributes.tangent.array[i*4+j];
+        if(tangents)for(let j=0;j<4;j++)unchangedFrontShading&&=tangents[i*4+j]===mesh.geometry.attributes.tangent.array[i*4+j];
       }
       maxLift=Math.max(maxLift,point.y-before.y);minLift=Math.min(minLift,point.y-before.y);
       const splay=Math.sign(before.x)*(point.x-before.x);
@@ -43,7 +43,7 @@ try {
       if(Math.abs(before.x)>5.5&&before.z> -5&&before.z< -4)supportHeights.push(point.y);
     }
     const repeat=prepareKnownTempleFit(gltf),unknown=prepareKnownTempleFit({asset:{extras:{}},scene:gltf.scene});
-    const preserved=indices.every((n,i)=>n===mesh.geometry.index.array[i])&&uv.every((n,i)=>n===mesh.geometry.attributes.uv.array[i])&&material===mesh.material;
+    const preserved=indices.every((n,i)=>n===mesh.geometry.index.array[i])&&(!uv||uv.every((n,i)=>n===mesh.geometry.attributes.uv.array[i]))&&material===mesh.material;
     const scene=new THREE.Scene(),ears=createEarOccluders();scene.add(ears);
     const probe=new THREE.Mesh(new THREE.PlaneGeometry(.4,.4),new THREE.MeshBasicMaterial({color:0xffffff,toneMapped:false}));scene.add(probe);
     const camera=new THREE.PerspectiveCamera(CAMERA_FOV,1,.1,500),renderer=new THREE.WebGLRenderer({alpha:true,antialias:false});

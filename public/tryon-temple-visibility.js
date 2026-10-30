@@ -27,6 +27,7 @@ export function prepareTempleVisibility(gltf) {
     }
     const ordered=[...front];geometry.clearGroups();geometry.addGroup(0,front.length,0);
     parts.forEach((triangles,side)=>{
+      if(!triangles.length)return;
       triangles.sort((a,b)=>a.end-b.end);
       const group={start:ordered.length,count:triangles.length*3,materialIndex:0};geometry.groups.push(group);
       for(const t of triangles)ordered.push(...t.ids);

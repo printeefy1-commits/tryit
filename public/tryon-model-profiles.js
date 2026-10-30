@@ -12,6 +12,10 @@ const profiles=new Map([
     frameDoubleSided:true,
     // This mesh already has longer, higher arms than the model-v1 source.
     templeFit:{firstLiftCm:.4,rearLiftCm:.65,splayCm:.9,extensionCm:.5}
+  }],
+  ['046f50c9b51e6d12d0956db2d60a4b0566c6d0455e5f2a374d8af939b198e0bf',{
+    label:'HEAD 12028',measurements:{calibrated:false},authoredMaterials:true,
+    templeFit:{firstLiftCm:.4,rearLiftCm:.65,splayCm:.9,extensionCm:.5}
   }]
 ]);
 

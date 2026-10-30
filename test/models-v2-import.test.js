@@ -25,7 +25,8 @@ test('models-v2 adds a textured standalone model without modifying existing prod
     assert.deepEqual(bytes,await fs.readFile(path.join(root,'public/products/models-v2/head-blue.glb')));
     const gltf=JSON.parse(bytes.subarray(20,20+bytes.readUInt32LE(12)));
     assert.equal(gltf.asset.extras.lunetteCaba.sourceSha256,p.sourceSha256);
-    assert.equal(gltf.images.length,3);assert.ok(gltf.images.every(i=>i.bufferView!==undefined&&!i.uri));
+    assert.ok(!gltf.images?.length,'authored revision uses material colours without baked textures');
+    assert.deepEqual(gltf.materials.map(m=>m.name).sort(),['Blue_Lenses','frame']);
     assert.ok((await fs.stat(path.join(root,p.image))).size>0);
     p.name='Administrator model name';p.visible=false;p.scale=.95;p.frameWidthMm=142;
     await fs.writeFile(db,JSON.stringify(products));const before=await fs.readFile(db);

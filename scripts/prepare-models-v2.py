@@ -9,7 +9,7 @@ source=args.input.resolve()
 output=args.output.resolve()
 output.parent.mkdir(parents=True,exist_ok=True)
 source_hash=hashlib.sha256(source.read_bytes()).hexdigest()
-expected='a013cbe08e711629e2a47a62560ca87b625dca8a0f20bdd4c6eae92f67c51514'
+expected='046f50c9b51e6d12d0956db2d60a4b0566c6d0455e5f2a374d8af939b198e0bf'
 if source_hash!=expected:raise RuntimeError('This fitting profile applies only to the verified models-v2 source asset.')
 bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False)
 bpy.ops.import_scene.gltf(filepath=str(source))
@@ -19,8 +19,9 @@ print('Imported faces',original,flush=True)
 for ob in meshes:
  bpy.context.view_layer.objects.active=ob
  bpy.ops.object.select_all(action='DESELECT');ob.select_set(True)
- if len(ob.data.polygons)>75000:
-  dec=ob.modifiers.new('Mobile mesh simplification','DECIMATE');dec.ratio=75000/len(ob.data.polygons);dec.use_collapse_triangulate=True
+ budget=max(4,round(75000*len(ob.data.polygons)/original))
+ if len(ob.data.polygons)>budget:
+  dec=ob.modifiers.new('Mobile mesh simplification','DECIMATE');dec.ratio=budget/len(ob.data.polygons);dec.use_collapse_triangulate=True
   bpy.ops.object.modifier_apply(modifier=dec.name)
  print('Optimized faces',len(ob.data.polygons),flush=True)
 for image in bpy.data.images:
@@ -39,6 +40,7 @@ binary_start=20+size+8
 repaired=0
 for mesh in doc['meshes']:
  for primitive in mesh['primitives']:
+  if 'TANGENT' not in primitive['attributes']:continue
   tangent=doc['accessors'][primitive['attributes']['TANGENT']]
   normal=doc['accessors'][primitive['attributes']['NORMAL']]
   tv=doc['bufferViews'][tangent['bufferView']]
@@ -61,7 +63,7 @@ doc['asset']['extras']={'lunetteCaba':{
  'estimatedDimensions':True,
  'sourceRelease':'https://github.com/printeefy1-commits/tryit/releases/tag/models-v2',
  'sourceSha256':source_hash,
- 'processing':'75000 triangles, 2048px PBR textures, explicit tangents, photo-relative fitting anchor; no measured physical dimensions.'}}
+ 'processing':'75000 total triangle budget; separate owner-authored frame/lens materials and vertex colours preserved; photo-relative fitting anchor, no measured physical dimensions.'}}
 encoded=json.dumps(doc,separators=(',',':')).encode()
 encoded+=b' '*((-len(encoded))%4)
 remaining=raw[20+size:]
