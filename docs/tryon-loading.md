@@ -8,7 +8,7 @@ Le statut distingue permission caméra, téléchargement du suivi (progression),
 
 Le modèle MediaPipe est téléchargé explicitement puis initialisé depuis son buffer. Le suivi démarre dès que possible, sans attendre le gros GLB. L'image caméra n'est jamais envoyée au serveur. Une erreur de chargement reste visible ; le suivi ne l'écrase plus.
 
-Les téléchargements ont une limite d'inactivité de 30 secondes, renouvelée à chaque bloc reçu (un transfert lent qui progresse n'est pas interrompu arbitrairement au bout de 30 secondes). Une initialisation du suivi qui ne répond pas est signalée après 60 secondes ; le décodage d'une monture après 45 secondes. Les GLB dépassant 25 MiB sont refusés avec un message explicite. Les HTTP 404/500 sont affichés comme erreurs de fichier au lieu d'une attente sans fin.
+Les téléchargements ont une limite d'inactivité de 30 secondes, renouvelée à chaque bloc reçu (un transfert lent qui progresse n'est pas interrompu arbitrairement au bout de 30 secondes). Une initialisation du suivi qui ne répond pas est signalée après 60 secondes ; le décodage d'une monture après 45 secondes. Les GLB dépassant 100 MiB sont refusés avec un message explicite. Les HTTP 404/500 sont affichés comme erreurs de fichier au lieu d'une attente sans fin.
 
 Fermer la fenêtre annule le téléchargement de monture et arrête la caméra. Les résultats d'une ancienne session sont ignorés et les objets 3D décodés après annulation sont libérés. Une initialisation MediaPipe en cours est partagée avec une éventuelle nouvelle tentative pour éviter plusieurs heaps WASM simultanés. Une erreur présente un bouton « Réessayer ».
 

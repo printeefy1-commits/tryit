@@ -1,1 +1,58 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Administration — Lunette Caba</title><link rel="icon" href="/assets/lunette-caba-logo.png"><link rel="stylesheet" href="/style.css"><script type="module" src="/admin.js"></script></head><body><header><a class="logo" href="/" aria-label="Lunette Caba — Accueil"><span class="brand-mark"><img src="/assets/lunette-caba-logo.png" alt="" width="500" height="500"></span></a><a href="/">Voir le site ↗</a></header><main class="admin-wrap"><p class="eyebrow">ESPACE PRIVÉ</p><h1>Votre collection.</h1><p id="feedback" role="status"></p><form id="login" class="panel"><h2>Connexion administrateur</h2><label for="password">Mot de passe</label><input id="password" type="password" autocomplete="current-password" required><button class="button">Se connecter</button></form><section id="dashboard" hidden><div class="actions"><button id="new" class="button">Ajouter une monture</button><button id="logout">Se déconnecter</button></div><div id="list" class="panel"></div><form id="editor" class="panel" hidden><h2 id="editor-title">Nouvelle monture</h2><div class="admin-grid"><div><label>Nom du modèle<input name="name" maxlength="100" required></label><label>Marque<input name="brand" maxlength="100" required></label><label>Photo produit · JPG, PNG, WebP<input type="file" name="image" accept="image/jpeg,image/png,image/webp"></label><label>Modèle 3D · GLB autonome, 25 Mo maximum<input type="file" name="model" accept=".glb"></label></div><div><label>Largeur extérieure totale · mm (facultatif)<input name="frameWidthMm" type="number" min="80" max="200" step="0.1" placeholder="Ex. 140"></label><img class="measurement-guide" src="/assets/frame-width-guide.svg" alt="A–B : mesurer les deux bords extérieurs de la face avant"><p class="small">Mesurez l’extérieur de la face avant, d’un bord à l’autre. Ce n’est pas la largeur d’un verre. Sans cette mesure, le rendu utilise une taille estimée.</p><label>Échelle · 0,3 à 3<input name="scale" type="number" step="0.05" min="0.3" max="3" value="1" required></label><label>Décalage vertical · −1 à 1<input name="offset" type="number" step="0.01" min="-1" max="1" value="0" required></label><label><input name="visible" type="checkbox" checked> Visible dans le catalogue</label><p class="small">GLB : centre à l’origine, largeur sur X, haut sur Y, face avant vers +Z. Utilisez une scène autonome sans ressources externes. Testez la monture depuis le catalogue après enregistrement.</p><p class="small">Sans modèle 3D, la fiche reste visible mais l’essayage est désactivé.</p></div></div><button class="button">Enregistrer</button><button id="cancel" type="button">Annuler</button></form></section></main></body></html>
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Administration — Lunette Caba</title><link rel="icon" href="/assets/lunette-caba-logo.png"><link rel="stylesheet" href="/style.css">
+  <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+  <script type="module" src="/admin.js"></script>
+</head>
+<body class="admin-page">
+  <header class="site-header"><a class="logo" href="/" aria-label="Lunette Caba — Accueil"><span class="brand-mark"><img src="/assets/lunette-caba-logo.png" alt="" width="500" height="500"></span><span class="wordmark">LUNETTE <b>CABA<span class="brand-dot">.</span></b></span></a><a class="header-cta" href="/">Voir la boutique <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a></header>
+  <main class="admin-wrap admin-workspace">
+    <div class="admin-intro"><div><p class="eyebrow">VOTRE ESPACE PRIVÉ</p><h1>Votre collection<span class="brand-dot">.</span></h1><p>Ajoutez vos produits, leurs photos et leurs modèles 3D. Directement ici.</p></div><span class="admin-private">ACCÈS ADMINISTRATEUR</span></div>
+    <p id="feedback" role="status" aria-live="polite" hidden></p>
+    <form id="login" class="panel login-panel"><span class="login-mark" aria-hidden="true">LC</span><h2>Bienvenue chez vous.</h2><p class="small">Connectez-vous pour gérer votre collection.</p><label for="password">Mot de passe administrateur</label><input id="password" type="password" autocomplete="current-password" required><button class="button" id="login-submit">Se connecter</button></form>
+    <section id="dashboard" hidden>
+      <div class="admin-stats"><div><span>La collection</span><strong id="stat-total">0</strong><small>produits au total</small></div><div><span>Dans la boutique</span><strong id="stat-visible">0</strong><small>produits visibles</small></div><div><span>Essayage virtuel</span><strong id="stat-models">0</strong><small>modèles 3D ajoutés</small></div></div>
+      <div class="admin-toolbar"><button id="new" class="button">Ajouter une monture <span aria-hidden="true">+</span></button><label class="admin-search"><span class="sr-only">Rechercher un produit</span><input id="product-search" type="search" placeholder="Rechercher une monture…"></label><button id="logout">Se déconnecter</button></div>
+      <div id="list" class="panel product-list" aria-live="polite"></div>
+      <form id="editor" class="panel product-editor" hidden>
+        <div class="editor-heading"><div><p class="eyebrow">LA FICHE PRODUIT</p><h2 id="editor-title">Nouvelle monture</h2></div><span class="small">Les fichiers existants sont conservés si vous n’en choisissez pas de nouveaux.</span></div>
+        <fieldset id="editor-fields">
+          <input type="hidden" name="productId">
+          <div class="admin-grid">
+            <div class="editor-assets">
+              <h3>01 <span>Vos fichiers</span></h3>
+              <label for="image-file">Photo du produit</label>
+              <div class="upload-drop" data-file="image"><input id="image-file" type="file" name="image" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"><span class="upload-glyph" aria-hidden="true">+</span><strong>Choisir ou déposer une photo</strong><span>JPG, PNG, WebP ou HEIC · 10 Mo maximum</span></div>
+              <p id="image-file-meta" class="file-meta">Aucune photo sélectionnée.</p>
+              <div class="admin-photo-frame"><img id="photo-preview" alt="Aperçu de la photo produit" hidden><span id="photo-placeholder">Votre photo apparaîtra ici</span></div>
+              <label for="image-fit">Présentation de la photo</label><select id="image-fit" name="imageFit"><option value="contain">Afficher la photo complète</option><option value="cover">Remplir la carte produit</option></select>
+              <label for="model-file">Modèle 3D</label>
+              <div class="upload-drop" data-file="model"><input id="model-file" type="file" name="model" accept=".glb,model/gltf-binary"><span class="upload-glyph" aria-hidden="true">+</span><strong>Choisir ou déposer un GLB</strong><span>Textures intégrées · 100 Mo maximum</span></div>
+              <p id="model-file-meta" class="file-meta">Aucun modèle sélectionné.</p>
+              <div class="model-viewer"><canvas id="model-preview" aria-label="Aperçu du modèle 3D"></canvas><p id="preview-message">Ajoutez un GLB pour le voir sous tous les angles.</p></div>
+              <div class="preview-toolbar"><span id="preview-status" class="small">Faites glisser pour tourner le modèle.</span><button id="preview-front" type="button">Face</button><button id="preview-oblique" type="button">3/4</button></div>
+              <p class="small">Un modèle léger rend l’essayage plus fluide, surtout sur téléphone.</p>
+            </div>
+            <div class="editor-settings">
+              <h3>02 <span>Les informations</span></h3>
+              <label for="product-name">Nom du modèle</label><input id="product-name" name="name" maxlength="100" placeholder="Ex. 12030" required>
+              <label for="product-brand">Marque</label><input id="product-brand" name="brand" maxlength="100" placeholder="Ex. HEAD" required>
+              <label class="visibility-toggle"><input name="visible" type="checkbox" checked><span><b>Visible dans la boutique</b><small>Décochez pour préparer le produit sans le publier.</small></span></label>
+              <div class="editor-hint"><strong>Un seul enregistrement.</strong><p>La photo s’affiche dans la collection. Avec un GLB, le produit apparaît aussi parmi les montures à essayer dans la caméra.</p></div>
+              <h3>03 <span>Le réglage de l’essayage</span></h3>
+              <label for="frame-width">Largeur extérieure totale · mm (facultatif)</label><input id="frame-width" name="frameWidthMm" type="number" min="80" max="200" step="0.1" placeholder="Ex. 140"><img class="measurement-guide" src="/assets/frame-width-guide.svg" alt="A–B : mesurer les deux bords extérieurs de la face avant"><p class="small">D’un bord extérieur à l’autre. Sans cette mesure, la taille reste estimée.</p>
+              <div class="setting-pair"><label>Échelle<input name="scale" type="number" step="0.01" min="0.3" max="3" value="1" required></label><label>Décalage vertical<input name="offset" type="number" step="0.01" min="-1" max="1" value="0" required></label></div>
+              <details class="orientation-settings"><summary>Orientation du modèle 3D</summary><p class="small">La vue « Face » doit montrer les deux verres. Corrigez l’orientation si le fichier s’ouvre de côté ou à l’envers.</p><div class="rotation-fields"><label>Verticale · X<input name="rotationX" type="number" min="-180" max="180" step="1" value="0"></label><label>Horizontale · Y<input name="rotationY" type="number" min="-180" max="180" step="1" value="0"></label><label>Inclinaison · Z<input name="rotationZ" type="number" min="-180" max="180" step="1" value="0"></label></div><button id="apply-orientation" type="button">Actualiser l’aperçu</button></details>
+              <p class="small">Vous pourrez modifier la photo, le GLB et les réglages plus tard. Un produit sans GLB peut être affiché, mais ne peut pas encore être essayé.</p>
+            </div>
+          </div>
+          <div class="editor-footer"><button id="save-product" class="button" type="submit">Enregistrer</button><button id="cancel" type="button">Annuler</button><span class="small">Enregistrez, puis vérifiez l’essayage dans la boutique.</span></div>
+        </fieldset>
+        <div id="upload-state" class="upload-state" hidden><div><strong id="upload-label">Envoi en cours…</strong><span id="upload-percent">0 %</span></div><progress id="upload-progress" value="0" max="100" aria-label="Progression de l’envoi"></progress><p id="upload-detail">Gardez cette page ouverte jusqu’à la confirmation.</p></div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

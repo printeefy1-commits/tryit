@@ -38,7 +38,7 @@ export async function fetchBuffer(url, {signal, label = 'Fichier', onProgress, m
     const response = await fetch(url, {signal: controller.signal});
     if (!response.ok) throw new Error(`${label} indisponible sur le serveur (HTTP ${response.status}).`);
     const total = Number(response.headers.get('content-length')) || 0;
-    if (total > maxBytes) throw new Error(`${label} trop volumineux. Utilisez la version optimisée (25 Mo maximum).`);
+    if (total > maxBytes) throw new Error(`${label} trop volumineux (${Math.round(maxBytes/1024/1024)} Mo maximum).`);
     const reader = response.body.getReader();
     const chunks = [];
     let received = 0;
@@ -47,7 +47,7 @@ export async function fetchBuffer(url, {signal, label = 'Fichier', onProgress, m
       const {done, value} = await reader.read();
       if (done) break;
       received += value.byteLength;
-      if (received > maxBytes) throw new Error(`${label} trop volumineux. Utilisez la version optimisée (25 Mo maximum).`);
+      if (received > maxBytes) throw new Error(`${label} trop volumineux (${Math.round(maxBytes/1024/1024)} Mo maximum).`);
       chunks.push(value);
       onProgress?.(received, total);
     }

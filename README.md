@@ -12,7 +12,7 @@ bash scripts/setup-model.sh
 npm start
 ```
 
-Port par défaut : 3000. `/admin.html` : administration. `npm test` : intégration API (authentification, protection des écritures, visibilité et cycle CRUD). Le modèle de suivi du visage est téléchargé depuis le dépôt officiel Google ; autoriser `storage.googleapis.com` si nécessaire. Les fichiers WASM, le modèle et les bibliothèques sont ensuite servis localement : aucune image caméra n’est transmise au serveur.
+Port par défaut : 3000. `/admin.html` : administration avec ajout direct de photos (JPG/PNG/WebP/HEIC, 10 MiB) et de GLB autonomes (100 MiB), aperçu 3D et progression d’envoi. [Utilisation et mise à jour unique du serveur (arabe)](docs/admin-uploads-ar.md). `npm test` : intégration API (authentification, protection des écritures, visibilité et cycle CRUD). Le modèle de suivi du visage est téléchargé depuis le dépôt officiel Google ; autoriser `storage.googleapis.com` si nécessaire. Les fichiers WASM, le modèle et les bibliothèques sont ensuite servis localement : aucune image caméra n’est transmise au serveur.
 
 ## Produits et 3D
 
@@ -22,7 +22,7 @@ Le modèle de démonstration Éclipse 01 a été retiré à la demande du propri
 
 ## Ubuntu / EC2
 
-Pour l'installation existante du propriétaire (`~/tryit`, service `tryit`, IP élastique `16.192.70.157`) : `git pull --ff-only origin main` puis `sudo systemctl restart tryit`. Les étapes suivantes concernent une installation neuve avec d'autres chemins et noms de service.
+Pour l'installation existante du propriétaire (`~/tryit`, service `tryit`, IP élastique `16.192.70.157`) : suivre la [mise à jour de l’administration et des limites Nginx](docs/admin-uploads-ar.md), qui inclut `npm ci --omit=dev` pour le convertisseur HEIC. Les ajouts de produits suivants se font directement sur le site. Les étapes suivantes concernent une installation neuve avec d'autres chemins et noms de service.
 
 1. Installer Node.js 24 LTS et Nginx depuis leurs sources officielles. Copier le projet dans `/opt/atelier-vision`, installer avec `npm ci --omit=dev`, exécuter `bash scripts/setup-model.sh`.
 2. Créer un utilisateur système non privilégié `atelier`. Lui donner la propriété de `data/` et `uploads/`, et la lecture du projet.
@@ -56,7 +56,10 @@ WantedBy=multi-user.target
 Extrait Nginx à intégrer au serveur HTTPS de votre domaine :
 
 ```nginx
-client_max_body_size 52m;
+client_max_body_size 120m;
+client_body_timeout 120s;
+proxy_read_timeout 600s;
+proxy_send_timeout 600s;
 location / {
     proxy_pass http://127.0.0.1:3000;
     proxy_set_header Host $host;

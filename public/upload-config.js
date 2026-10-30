@@ -1,0 +1,2 @@
+export const MODEL_MAX_BYTES=100*1024*1024;
+export const IMAGE_MAX_BYTES=10*1024*1024;

@@ -1,13 +1,14 @@
 import * as THREE from 'three';
-import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {createModelLoader} from './model-loader.js';
+import {prepareGlasses} from './prepare-glasses.js';
+import {MODEL_MAX_BYTES} from './upload-config.js';
 import {smoothLandmarks, createFaceOccluder, createHeadOccluder, updateRigidOccluders, PoseContinuity} from './tryon-fit.js';
 import {estimatePerspectiveFit,trackingAlpha,CAMERA_FOV} from './tryon-perspective.js';
 import {FaceLandmarker,FilesetResolver} from '/vendor/vision/vision_bundle.mjs';
 import {aborted, waitFor, fetchBuffer, transferMessage} from './tryon-loading.js';
 import {CameraFrame} from './tryon-camera.js';
-import {prepareKnownMaterials} from './tryon-materials.js';
-import {createEarOccluders,updateEarOccluders,prepareKnownTempleFit} from './tryon-ears.js';
-import {prepareTempleVisibility,updateTempleVisibility} from './tryon-temple-visibility.js';
+import {createEarOccluders,updateEarOccluders} from './tryon-ears.js';
+import {updateTempleVisibility} from './tryon-temple-visibility.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 const $=s=>document.querySelector(s);const products=(await fetch('/api/products').then(r=>r.json())).filter(p=>!(p.id==='demo'&&p.demo));
 const cameraIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 1.5-2h5L16 5h4v15H4V5Z"/><circle cx="12" cy="12" r="4"/></svg>';
@@ -62,7 +63,7 @@ async function setModel(p) {
   $('#model-select').value=p.id;
   for(const choice of $('#model-choices').children)choice.setAttribute('aria-pressed',String(choice.dataset.modelId===p.id));
   $('#model-note').textContent=p.estimatedDimensions
-      ? 'Reconstitution à partir de photos : dimensions, courbure et matériaux estimés. La fidélité au produit réel reste à valider.'
+      ? 'Les dimensions et l’ajustement de cet aperçu restent estimés. La fidélité au produit réel reste à valider.'
       : 'Aperçu du modèle 3D fourni pour cette monture. Le rendu dépend de votre appareil et de l’éclairage.';
   $('#snapshot').disabled=true;
   const version=++loadVersion,session=sessionVersion;
@@ -77,14 +78,14 @@ async function setModel(p) {
     phase('Chargement de la monture…');
     {
       const buffer=await fetchBuffer(p.model,{
-        signal:controller.signal,label:'Modèle 3D',
+        signal:controller.signal,label:'Modèle 3D',maxBytes:MODEL_MAX_BYTES,
         onProgress:(bytes,total)=>{if(current())phase(transferMessage('Téléchargement de la monture',bytes,total));}
       });
       if(!current())throw aborted();
       if(buffer.byteLength<12||new DataView(buffer).getUint32(0,true)!==0x46546c67)
         throw new Error('Le fichier de la monture n’est pas un GLB valide.');
       phase('Préparation de la monture et de ses textures…');
-      const parsing=new GLTFLoader().parseAsync(buffer,new URL('.',new URL(p.model,location.href)).href);
+      const parsing=createModelLoader().parseAsync(buffer,new URL('.',new URL(p.model,location.href)).href);
       let gltf;
       try {
         gltf=await waitFor(parsing,45000,'La préparation de la monture prend trop de temps. Réessayez.',controller.signal);
@@ -94,18 +95,7 @@ async function setModel(p) {
         throw error;
       }
       next=gltf.scene;
-      const opticalProfile=prepareKnownMaterials(gltf);
-      prepareKnownTempleFit(gltf);
-      const templeVisibility=prepareTempleVisibility(gltf);
-      const box=new THREE.Box3().setFromObject(next),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
-      if(!size.x)throw new Error('Le modèle 3D est vide.');
-      const fitting=gltf.asset?.extras?.lunetteCaba;
-      const anchored=Array.isArray(fitting?.anchor)&&fitting.anchor.length===3&&fitting.anchor.every(Number.isFinite)&&Number.isFinite(fitting.referenceWidth)&&fitting.referenceWidth>0;
-      next.position.sub(anchored?new THREE.Vector3(...fitting.anchor):center);
-      const wrapper=new THREE.Group();wrapper.add(next);wrapper.scale.setScalar(1/(anchored?fitting.referenceWidth:size.x));
-      const normalized=new THREE.Group();normalized.add(wrapper);next=normalized;
-      if(opticalProfile)next.userData.opticalProfile=opticalProfile;
-      if(templeVisibility)next.userData.templeVisibility=templeVisibility;
+      next=prepareGlasses(gltf,p);
     }
     if(!current())throw aborted();
     model=next;model.visible=false;scene.add(model);

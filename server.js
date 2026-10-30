@@ -8,11 +8,14 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {validateModel,validatePhoto} from './upload-validation.js';
+import {MODEL_MAX_BYTES} from './public/upload-config.js';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const app=express(); const prod=process.env.NODE_ENV==='production';
 if(!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length<12) throw Error('Set ADMIN_PASSWORD (at least 12 characters).');
 if(prod && (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length<32)) throw Error('Set SESSION_SECRET (at least 32 characters).');
 await fs.mkdir(path.join(root,'data'),{recursive:true}); await fs.mkdir(path.join(root,'uploads'),{recursive:true});
+const incoming=path.join(root,'data/incoming');await fs.mkdir(incoming,{recursive:true,mode:0o700});
 const db=path.join(root,'data/catalog.json');
 try{await fs.access(db)}catch{await fs.writeFile(db,JSON.stringify([]))}
 const read=async()=>JSON.parse(await fs.readFile(db,'utf8'));
@@ -38,17 +41,65 @@ app.get('/api/session',(req,res)=>res.json({admin:!!req.session.admin}));
 app.post('/api/logout',admin,(req,res,next)=>req.session.destroy(err=>{if(err)return next(err);res.clearCookie('connect.sid',{httpOnly:true,sameSite:'strict',secure:prod});res.json({ok:true})}));
 app.get('/api/products',async(req,res)=>res.json((await read()).filter(p=>p.visible)));
 app.get('/api/admin/products',admin,async(req,res)=>res.json(await read()));
-const upload=multer({storage:multer.diskStorage({destination:path.join(root,'uploads'),filename:(req,file,cb)=>cb(null,crypto.randomUUID()+path.extname(file.originalname).toLowerCase())}),limits:{fileSize:25*1024*1024,files:2},fileFilter:(req,file,cb)=>cb(null,file.fieldname==='image'?/\.(png|jpe?g|webp)$/i.test(file.originalname):file.fieldname==='model'&&/\.glb$/i.test(file.originalname))}).fields([{name:'image',maxCount:1},{name:'model',maxCount:1}]);
-app.post('/api/admin/products/:id',admin,upload,async(req,res)=>{
+const upload=multer({storage:multer.diskStorage({destination:(req,file,cb)=>cb(null,req.uploadDir),filename:(req,file,cb)=>cb(null,crypto.randomUUID()+path.extname(file.originalname).toLowerCase())}),
+ limits:{fileSize:MODEL_MAX_BYTES,files:2,fields:24,parts:28,fieldSize:8192},fileFilter:(req,file,cb)=>{
+  const valid=file.fieldname==='image'?/\.(png|jpe?g|webp|heic|heif)$/i.test(file.originalname):file.fieldname==='model'&&/\.glb$/i.test(file.originalname);
+  cb(valid?null:Error('Format non pris en charge. Utilisez une photo JPG, PNG, WebP ou HEIC et un modèle GLB.'),valid);
+ }}).fields([{name:'image',maxCount:1},{name:'model',maxCount:1}]);
+async function receiveUpload(req,res,next){
+ try{
+  req.uploadDir=await fs.mkdtemp(path.join(incoming,'upload-'));
+  const cleanup=()=>fs.rm(req.uploadDir,{recursive:true,force:true}).catch(()=>{});
+  if(req.aborted||res.destroyed){await cleanup();return;}
+  res.once('close',cleanup);
+  upload(req,res,error=>{
+   if(!error)return next();
+   const message=error.code==='LIMIT_FILE_SIZE'?'Le fichier dépasse la limite autorisée (GLB : 100 Mo, photo : 10 Mo).':error instanceof multer.MulterError?'Trop de fichiers ou de champs dans cet envoi.':error.message;
+   res.status(error.code==='LIMIT_FILE_SIZE'?413:400).json({error:message});
+  });
+ }catch(error){next(error);}
+}
+app.post('/api/admin/products/:id',admin,receiveUpload,async(req,res)=>{
  const files=Object.values(req.files||{}).flat();
  try{
- for(const f of files){const h=await fs.open(f.path);const bytes=Buffer.alloc(12);await h.read(bytes,0,12,0);await h.close();const ext=path.extname(f.filename);const valid=f.fieldname==='model'?bytes.toString('ascii',0,4)==='glTF'&&bytes.readUInt32LE(4)===2:ext==='.png'?bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):['.jpg','.jpeg'].includes(ext)?bytes[0]===255&&bytes[1]===216:bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP';if(!valid)throw Error('Format de fichier invalide.');}
+ let modelMetadata={};
+ for(const file of files){
+  if(file.fieldname==='model')modelMetadata=await validateModel(file);
+  else await validatePhoto(file);
+ }
+ if(req.aborted||res.destroyed)throw Error('Envoi interrompu.');
  const name=String(req.body.name||'').trim().slice(0,100),brand=String(req.body.brand||'').trim().slice(0,100);if(!name||!brand)throw Error('Nom et marque requis.');
  const scale=Number(req.body.scale??1),offset=Number(req.body.offset??0);if(!Number.isFinite(scale)||scale<0.3||scale>3||!Number.isFinite(offset)||Math.abs(offset)>1)throw Error('Réglage invalide.');
  const hasWidth=req.body.frameWidthMm!==undefined,frameWidthMm=String(req.body.frameWidthMm??'').trim()===''?null:Number(req.body.frameWidthMm);
  if(hasWidth&&frameWidthMm!==null&&(!Number.isFinite(frameWidthMm)||frameWidthMm<80||frameWidthMm>200))throw Error('Largeur extérieure invalide : utilisez des millimètres, entre 80 et 200.');
- const result=await mutate(items=>{let p=items.find(x=>x.id===req.params.id);if(!p){if(req.params.id!=='new')throw Error('Modèle introuvable.');p={id:crypto.randomUUID(),demo:false};items.push(p)}Object.assign(p,{name,brand,visible:req.body.visible==='true',scale,offset});if(hasWidth){if(frameWidthMm===null)delete p.frameWidthMm;else p.frameWidthMm=frameWidthMm}for(const f of files)p[f.fieldname]='/uploads/'+f.filename;return p});res.json(result);
- }catch(e){await Promise.all(files.map(f=>fs.unlink(f.path).catch(()=>{})));res.status(400).json({error:e.message})}
+ const hasRotation=['rotationX','rotationY','rotationZ'].some(k=>req.body[k]!==undefined);
+ const rotation=['rotationX','rotationY','rotationZ'].map(k=>Number(req.body[k]??0));
+ if(hasRotation&&rotation.some(n=>!Number.isFinite(n)||Math.abs(n)>180))throw Error('Les rotations doivent être comprises entre −180° et 180°.');
+ const hasFit=req.body.imageFit!==undefined,imageFit=req.body.imageFit||'contain';
+ if(hasFit&&!['contain','cover'].includes(imageFit))throw Error('Cadrage photo invalide.');
+ const clientId=req.params.id==='new'&&req.body.productId;
+ if(clientId&&!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId))throw Error('Identifiant produit invalide.');
+ const moved=[];let result;
+ try{
+  result=await mutate(async items=>{
+   if(req.aborted||res.destroyed)throw Error('Envoi interrompu.');
+   let p=items.find(x=>x.id===(clientId||req.params.id));
+   if(!p){if(req.params.id!=='new')throw Error('Modèle introuvable.');p={id:clientId||crypto.randomUUID(),demo:false,estimatedDimensions:true};items.push(p);}
+   for(const file of files){
+    const destination=path.join(root,'uploads',file.filename);await fs.rename(file.path,destination);moved.push(destination);
+    if(p[file.fieldname])p[file.fieldname==='model'?'previousModel':'previousImage']=p[file.fieldname];
+    p[file.fieldname]='/uploads/'+file.filename;
+   }
+   Object.assign(p,{name,brand,visible:req.body.visible==='true',scale,offset});
+   if(hasWidth){if(frameWidthMm===null)delete p.frameWidthMm;else p.frameWidthMm=frameWidthMm;}
+   if(hasRotation)p.modelRotation=rotation;
+   if(hasFit)p.imageFit=imageFit;
+   if(Object.keys(modelMetadata).length){if(p.sourceSha256)p.previousModelSourceSha256=p.sourceSha256;Object.assign(p,modelMetadata);p.modelSource='Ajout depuis l’administration';}
+   return p;
+  });
+ }catch(error){await Promise.all(moved.map(f=>fs.unlink(f).catch(()=>{})));throw error;}
+ res.json(result);
+ }catch(error){if(!res.destroyed)res.status(400).json({error:error.message});}
 });
 app.delete('/api/admin/products/:id',admin,async(req,res)=>{await mutate(items=>{const i=items.findIndex(p=>p.id===req.params.id);if(i>=0)items.splice(i,1)});res.json({ok:true})});
 app.use('/uploads',express.static(path.join(root,'uploads'),{setHeaders:res=>res.setHeader('X-Content-Type-Options','nosniff')}));
@@ -57,3 +108,4 @@ app.use('/vendor/vision',express.static(path.join(root,'node_modules/@mediapipe/
 app.use(express.static(path.join(root,'public')));
 app.use((err,req,res,next)=>{console.error(err.message);res.status(500).json({error:'Opération impossible. Vérifiez les fichiers et réessayez.'})});
 const server=app.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>console.log('Lunette Caba listening on port '+server.address().port));
+server.requestTimeout=10*60*1000;
