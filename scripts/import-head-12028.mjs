@@ -21,7 +21,7 @@ export async function importProduct(project=path.resolve(path.dirname(fileURLToP
   assets[field]='/uploads/'+name;
  }
  // Keep the historical ID/path; the owner later identified model-v1 as 12029.
- items.push({id,name:'12029',brand:'HEAD',visible:true,demo:false,estimatedDimensions:true,imageFit:'cover',scale:1,offset:0,...assets});
+ items.push({id,name:'12029',brand:'HEAD',visible:true,demo:false,estimatedDimensions:true,imageFit:'contain',scale:1,offset:0,...assets});
  const temporary=db+'.import-'+crypto.randomUUID();
  await fs.writeFile(temporary,JSON.stringify(items,null,2));
  await fs.rename(temporary,db);
