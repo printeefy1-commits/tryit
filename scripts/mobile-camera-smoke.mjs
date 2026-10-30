@@ -79,7 +79,8 @@ try {
   assert.ok(Math.abs(png.readUInt32BE(16)/png.readUInt32BE(20)-nativeAspect)<.005,'download keeps the complete native camera frame');
   const alternative=await page.locator('#model-select').evaluate(select=>[...select.options].find(o=>o.value!==select.value)?.value);
   if(alternative){
-    await page.locator('#model-select').selectOption(alternative);
+    await page.locator(`.model-choice[data-model-id="${alternative}"]`).click();
+    assert.equal(await page.locator(`.model-choice[data-model-id="${alternative}"]`).getAttribute('aria-pressed'),'true');
     await page.waitForFunction(()=>!document.querySelector('#snapshot').disabled&&document.querySelector('#try-status').textContent.startsWith('Visage détecté'),{},{timeout:60000});
     assert.equal(await page.evaluate(()=>window.cameraRequests),1,'changing glasses reuses the camera');
   }

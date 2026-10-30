@@ -9,12 +9,20 @@ import {prepareKnownMaterials} from './tryon-materials.js';
 import {createEarOccluders,updateEarOccluders,prepareKnownTempleFit} from './tryon-ears.js';
 import {prepareTempleVisibility,updateTempleVisibility} from './tryon-temple-visibility.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
-const $=s=>document.querySelector(s);const products=await fetch('/api/products').then(r=>r.json());
-const illustration='<svg viewBox="0 0 600 300" aria-hidden="true"><path d="M90 105 L25 65 M510 105 L575 65"/><path class="lenses" d="M65 110 Q150 65 255 110 L240 195 Q150 240 85 190 Z M345 110 Q450 65 535 110 L515 190 Q450 240 360 195 Z"/><path d="M255 120 Q300 95 345 120"/></svg>';
+const $=s=>document.querySelector(s);const products=(await fetch('/api/products').then(r=>r.json())).filter(p=>!(p.id==='demo'&&p.demo));
+const cameraIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 1.5-2h5L16 5h4v15H4V5Z"/><circle cx="12" cy="12" r="4"/></svg>';
+const arrowIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg>';
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-$('#count').textContent=products.length+' monture'+(products.length>1?'s':'');
-for(const p of products){const card=document.createElement('article');card.className='product';card.innerHTML=`<div class="product-art">${p.image?`<img class="${p.imageFit==='cover'?'product-image--cover':''}" src="${escape(p.image)}" alt="${escape(p.name)}">`:illustration}<span class="badge">${p.demo?'MODÈLE DÉMO':p.estimatedDimensions?'MODÈLE APPROXIMATIF':p.model?'ESSAYAGE 3D':'BIENTÔT EN 3D'}</span></div><p class="brand">${escape(p.brand)}</p><h3>${escape(p.name)}</h3><button ${!p.demo&&!p.model?'disabled':''}>${p.demo||p.model?'Essayer sur mon visage':'Essai bientôt disponible'} <span>↗</span></button>`;card.querySelector('button').onclick=()=>openTry(p);$('#products').append(card)}
-if(!products.length)$('#products').textContent='La collection arrive bientôt.';
+$('#count').textContent=String(products.length).padStart(2,'0')+' monture'+(products.length>1?'s':'');
+for(const [index,p] of products.entries()){
+  const card=document.createElement('article');card.className='product';
+  const description=p.id==='head-12028-col400'?'Noir profond · Verres gris':p.id==='head-12028-models-v2'?'Bleu nuit · Verres bleus':'Votre prochain point de vue.';
+  card.innerHTML=`<div class="product-art">${p.image?`<img class="${p.imageFit==='cover'?'product-image--cover':''}" src="${escape(p.image)}" alt="${escape(p.brand+' '+p.name)}" width="1300" height="1000" loading="lazy">`:'<div class="product-placeholder">Photo à venir</div>'}<span class="product-number">${String(index+1).padStart(2,'0')}</span><span class="badge">${cameraIcon}${p.model?'ESSAYAGE VIRTUEL':'BIENTÔT EN ESSAI'}</span></div><div class="product-info"><div class="product-heading"><div><p class="brand">${escape(p.brand)}</p><h3>${escape(p.name)}</h3></div><span class="product-icon" aria-hidden="true">${arrowIcon}</span></div><p class="product-description">${description}</p><button ${!p.model?'disabled':''}>${p.model?'Essayer sur mon visage':'Essai bientôt disponible'} ${arrowIcon}</button></div>`;
+  card.querySelector('button').onclick=()=>openTry(p);$('#products').append(card);
+}
+if(!products.length){const empty=document.createElement('p');empty.className='empty-collection';empty.textContent='La collection arrive bientôt.';$('#products').append(empty);}
+const featured=products.find(p=>p.id==='head-12028-models-v2'&&p.image)||products.find(p=>p.image);
+if(featured){$('#hero-photo').src=featured.image;$('#hero-photo').alt=featured.brand+' '+featured.name;$('#hero-photo').hidden=false;$('#hero-product-name').textContent=featured.brand+' '+featured.name;}
 const dialog=$('#try-dialog'),video=$('#video'),canvas=$('#overlay');
 const backdrop=$('#camera-backdrop'),backdropContext=backdrop.getContext('2d',{alpha:false});
 const mobileTry=matchMedia('(max-width:750px), (hover:none) and (pointer:coarse)');
@@ -25,8 +33,18 @@ let startupController=null,modelController=null,loadingMessage='';
 let cameraFrame=null;
 let lightingEnvironment=null;
 const poseContinuity=new PoseContinuity();
-const readyProducts=products.filter(p=>p.demo||p.model);
-for(const p of readyProducts)$('#model-select').add(new Option(p.name,p.id));
+const readyProducts=products.filter(p=>p.model);
+for(const p of readyProducts){
+  $('#model-select').add(new Option(p.brand+' '+p.name,p.id));
+  const choice=document.createElement('button');choice.type='button';choice.className='model-choice';choice.dataset.modelId=p.id;
+  choice.setAttribute('aria-label','Essayer '+p.brand+' '+p.name);choice.setAttribute('aria-pressed','false');
+  choice.innerHTML=`<span class="choice-photo">${p.image?`<img src="${escape(p.image)}" alt="" width="64" height="64">`:cameraIcon}</span><span class="choice-name">${escape(p.name)}</span>`;
+  choice.onclick=()=>{if(selected?.id!==p.id)setModel(p).catch(failed);};$('#model-choices').append(choice);
+}
+function setModelChoicesDisabled(disabled){
+  $('#model-select').disabled=disabled;
+  for(const choice of $('#model-choices').children)choice.disabled=disabled;
+}
 function phase(message, overlay=false) {
   loadingMessage=message;
   $('#try-status').textContent=message;
@@ -36,15 +54,14 @@ function phase(message, overlay=false) {
 function assertSession(version) {
   if(version!==sessionVersion||!dialog.open)throw aborted();
 }
-function demoGlasses(){const group=new THREE.Group();const frameMat=new THREE.MeshStandardMaterial({color:0x252a24,roughness:.33});const lensMat=new THREE.MeshStandardMaterial({color:0x263c30,transparent:true,opacity:.83,roughness:.18,metalness:.2});for(const side of [-1,1]){const ring=new THREE.Mesh(new THREE.TorusGeometry(.23,.026,12,64),frameMat);ring.scale.y=.76;ring.position.x=side*.285;group.add(ring);const lens=new THREE.Mesh(new THREE.CircleGeometry(.21,64),lensMat);lens.scale.y=.76;lens.position.set(side*.285,0,-.008);group.add(lens);const arm=new THREE.Mesh(new THREE.BoxGeometry(.025,.035,.52),frameMat);arm.position.set(side*.52,.03,-.25);group.add(arm)}const bridge=new THREE.Mesh(new THREE.BoxGeometry(.14,.03,.035),frameMat);group.add(bridge);return group}
 function dispose(obj){obj.traverse(n=>{n.geometry?.dispose();const materials=Array.isArray(n.material)?n.material:n.material?[n.material]:[];for(const m of materials){for(const v of Object.values(m))if(v?.isTexture)v.dispose();m.dispose()}})}
 async function setModel(p) {
   selected=p;
   $('#try-name').textContent=p.name;
+  $('#try-brand').textContent=p.brand+' / ESSAYAGE EN DIRECT';
   $('#model-select').value=p.id;
-  $('#model-note').textContent=p.demo
-    ? 'Le modèle de démonstration est une illustration, pas une reproduction de vos produits.'
-    : p.estimatedDimensions
+  for(const choice of $('#model-choices').children)choice.setAttribute('aria-pressed',String(choice.dataset.modelId===p.id));
+  $('#model-note').textContent=p.estimatedDimensions
       ? 'Reconstitution à partir de photos : dimensions, courbure et matériaux estimés. La fidélité au produit réel reste à valider.'
       : 'Aperçu du modèle 3D fourni pour cette monture. Le rendu dépend de votre appareil et de l’éclairage.';
   $('#snapshot').disabled=true;
@@ -58,8 +75,7 @@ async function setModel(p) {
   const current=()=>version===loadVersion&&session===sessionVersion&&dialog.open;
   try {
     phase('Chargement de la monture…');
-    if(p.demo)next=demoGlasses();
-    else {
+    {
       const buffer=await fetchBuffer(p.model,{
         signal:controller.signal,label:'Modèle 3D',
         onProgress:(bytes,total)=>{if(current())phase(transferMessage('Téléchargement de la monture',bytes,total));}
@@ -113,12 +129,12 @@ function openTry(p) {
   setModel(p).catch(failed);
   // Start within the original tap, including on Safari. The browser still
   // owns its permission prompt; closing invalidates a pending request.
-  if(mobileTry.matches)startCamera();
+  startCamera();
 }
 function applyTryMode(){
   dialog.classList.toggle('mobile-try',mobileTry.matches);
-  $('#try-info').open=!mobileTry.matches;
-  $('#start-camera').hidden=mobileTry.matches&&(!!stream||busy);
+  $('#try-info').open=false;
+  $('#start-camera').hidden=!!stream||busy;
 }
 mobileTry.addEventListener('change',()=>{if(dialog.open){applyTryMode();resizeCameraDisplay();}});
 $('#model-select').onchange=()=>setModel(readyProducts.find(p=>p.id===$('#model-select').value)).catch(failed);
@@ -142,7 +158,7 @@ function stop() {
   scene=null;camera=null;lastTime=-1;filteredFace=null;lastTrackingTime=0;loadingMessage='';busy=false;
   $('#start-camera').disabled=false;$('#start-camera').textContent='Activer la caméra';
   $('#start-camera').hidden=false;
-  $('#model-select').disabled=false;$('#snapshot').disabled=true;
+  setModelChoicesDisabled(false);$('#snapshot').disabled=true;
 }
 function failed(error) {
   if(error.name==='AbortError')return;
@@ -184,8 +200,8 @@ async function startCamera(){
   if(busy||stream)return;
   const session=++sessionVersion;
   const controller=new AbortController();startupController=controller;
-  busy=true;$('#start-camera').disabled=true;$('#model-select').disabled=true;
-  $('#start-camera').hidden=dialog.classList.contains('mobile-try');
+  busy=true;$('#start-camera').disabled=true;setModelChoicesDisabled(true);
+  $('#start-camera').hidden=true;
   phase('Autorisez l’accès à votre caméra…',true);
   try {
     if(!navigator.mediaDevices?.getUserMedia)throw new Error('HTTPS requis pour accéder à la caméra.');
@@ -247,7 +263,7 @@ async function startCamera(){
   } catch(error) {
     if(session===sessionVersion)failed(error);
   } finally {
-    if(session===sessionVersion){busy=false;$('#start-camera').disabled=!!stream;$('#model-select').disabled=false;}
+    if(session===sessionVersion){busy=false;$('#start-camera').disabled=!!stream;setModelChoicesDisabled(false);}
   }
 }
 $('#start-camera').onclick=startCamera;
@@ -264,7 +280,7 @@ function resizeCameraDisplay(){
 window.addEventListener('resize',resizeCameraDisplay);
 window.visualViewport?.addEventListener('resize',resizeCameraDisplay);
 function updateCameraBackdrop(source){
-  if(!dialog.classList.contains('mobile-try')||!backdropContext)return;
+  if(!dialog.open||!backdropContext)return;
   const width=source.videoWidth||source.width,height=source.videoHeight||source.height;
   if(!width||!height)return;
   // A small copy is enough for a blurred surround. Keep it independent of
@@ -336,6 +352,7 @@ function tick() {
     frame = requestAnimationFrame(tick);
   } catch(e) {
     stop();
+    $('#start-camera').textContent='Réessayer';
     $('#try-status').textContent = 'Le suivi a été interrompu. Réactivez la caméra.';
   }
 }

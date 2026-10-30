@@ -9,10 +9,13 @@ try{
 await new Promise((resolve,reject)=>{child.stdout.once('data',resolve);child.once('exit',()=>reject(Error('Server failed')))});
 browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
 const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
-await page.goto('http://127.0.0.1:3188');await page.getByRole('button',{name:'Essayer sur mon visage'}).first().click();await page.locator('dialog').waitFor({state:'visible'});await page.getByRole('button',{name:'Fermer'}).click();
+await page.addInitScript(()=>{navigator.mediaDevices.getUserMedia=()=>Promise.reject(new DOMException('Denied in layout test','NotAllowedError'));});
+await page.goto('http://127.0.0.1:3188');await page.getByRole('button',{name:'Essayer sur mon visage'}).first().click();await page.locator('dialog').waitFor({state:'visible'});assert.equal(await page.locator('.model-choice').count(),await page.locator('#model-select option').count());assert.ok(!await page.locator('#model-select').textContent().then(t=>t.includes('Éclipse')));await page.getByRole('button',{name:'Fermer'}).click();await page.waitForFunction(()=>!document.body.classList.contains('try-open'));
 await page.screenshot({path:'/tmp/atelier-desktop.png',fullPage:true});
 await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/atelier-mobile.png',fullPage:true});
 assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'No mobile horizontal overflow');
+assert.equal(await page.getByRole('heading',{name:'Éclipse 01',exact:true}).count(),0);
+for(const img of await page.locator('.product img').all())await img.evaluate(im=>im.decode());
 await page.goto('http://127.0.0.1:3188/admin.html');await page.locator('#password').fill(password);await page.getByRole('button',{name:'Se connecter'}).click();await page.locator('#dashboard').waitFor({state:'visible'});
 await page.getByRole('button',{name:'Ajouter une monture'}).click();await page.locator('[name=name]').fill('Browser test');await page.locator('[name=brand]').fill('Test');await page.getByRole('button',{name:'Enregistrer',exact:true}).click();await page.getByText('Monture enregistrée.').waitFor();
 page.on('dialog',d=>d.accept());const row=page.locator('.row').filter({hasText:'Browser test'});await row.getByRole('button',{name:'Supprimer'}).click();await row.waitFor({state:'detached'});

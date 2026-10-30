@@ -7,7 +7,7 @@ before(async()=>{child=spawn(process.execPath,['server.js'],{env:{...process.env
 after(()=>child?.kill());
 test('public catalogue, protected writes, login, upload, visibility, edit and delete',async()=>{
  assert.equal((await fetch(base)).status,200);
- let r=await fetch(base+'/api/products');assert.ok(Array.isArray(await r.json()));
+ let r=await fetch(base+'/api/products');const catalogue=await r.json();assert.ok(Array.isArray(catalogue));assert.ok(!catalogue.some(p=>p.id==='demo'&&p.demo),'retired demo is absent from the catalogue');
  assert.equal((await fetch(base+'/api/admin/products')).status,401);
  assert.equal((await fetch(base+'/api/admin/products/new',{method:'POST'})).status,401);
  assert.equal((await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:'wrong'})})).status,401);

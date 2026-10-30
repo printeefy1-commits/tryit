@@ -14,14 +14,14 @@ if(!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length<12) throw Er
 if(prod && (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length<32)) throw Error('Set SESSION_SECRET (at least 32 characters).');
 await fs.mkdir(path.join(root,'data'),{recursive:true}); await fs.mkdir(path.join(root,'uploads'),{recursive:true});
 const db=path.join(root,'data/catalog.json');
-const demo={id:'demo',name:'Éclipse 01',brand:'LUNETTE CABA',description:'Une silhouette intemporelle. Découvrez notre monture de démonstration en réalité augmentée.',visible:true,demo:true,scale:1,offset:0};
-try{await fs.access(db)}catch{await fs.writeFile(db,JSON.stringify([demo]))}
+try{await fs.access(db)}catch{await fs.writeFile(db,JSON.stringify([]))}
 const read=async()=>JSON.parse(await fs.readFile(db,'utf8'));
 let queue=Promise.resolve();
 function mutate(fn){const next=queue.then(async()=>{const items=await read();const result=await fn(items);await fs.writeFile(db+'.tmp',JSON.stringify(items,null,2));await fs.rename(db+'.tmp',db);return result});queue=next.catch(()=>{});return next}
-// Rename only the original seeded demo; preserve administrator-created products.
-if ((await read()).some(p=>p.id==='demo' && p.demo && p.brand==='ATELIER VISION')) {
-  await mutate(items=>{const p=items.find(p=>p.id==='demo' && p.demo && p.brand==='ATELIER VISION');if(p)p.brand='LUNETTE CABA'});
+// The owner retired the seeded Éclipse demo. Remove only that seeded record;
+// retain all actual products and uploads, including administrator edits.
+if ((await read()).some(p=>p.id==='demo'&&p.demo===true)) {
+  await mutate(items=>{const i=items.findIndex(p=>p.id==='demo'&&p.demo===true);if(i>=0)items.splice(i,1)});
 }
 app.disable('x-powered-by'); if(prod)app.set('trust proxy',1);
 app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'","'wasm-unsafe-eval'","'sha256-"+crypto.createHash('sha256').update('{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}').digest('base64')+"'"],styleSrc:["'self'"],imgSrc:["'self'","data:","blob:"],connectSrc:["'self'","blob:"],workerSrc:["'self'","blob:"],upgradeInsecureRequests:prod?[]:null}}}));

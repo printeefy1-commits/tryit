@@ -17,8 +17,8 @@ try{
  await page.goto('http://127.0.0.1:3192');
  const products=await page.evaluate(()=>fetch('/api/products').then(r=>r.json()));const product=products.find(p=>p.id===(process.env.TRYON_PRODUCT_ID||'head-12028-col400'));
  assert.ok(product?.model,'A GLB-backed test product is required');
- async function open(){await page.getByRole('button',{name:'Essayer sur mon visage'}).first().click();await page.locator('#model-select').selectOption(product.id);}
- await open();await page.locator('#start-camera').click();
+ async function open(){await page.getByRole('button',{name:'Essayer sur mon visage'}).first().click();await page.locator('#model-select').selectOption(product.id,{force:true});}
+ await open();
  await page.waitForFunction(()=>document.querySelector('#try-status').textContent.includes('HTTP 404'));
  assert.equal(await page.locator('#start-camera').textContent(),'Réessayer');
  assert.ok(await page.locator('#start-camera').isEnabled());
@@ -31,10 +31,10 @@ try{
  await page.waitForFunction(()=>document.querySelector('#try-status').textContent.startsWith('Visage détecté'),{},{timeout:60000});
  await page.locator('#close-try').click();await page.waitForFunction(()=>document.querySelector('#video').srcObject===null);
  // Close while the next model request is pending, then open/retry immediately.
- await open();await page.locator('#start-camera').click();
+ await open();
  await page.waitForFunction(()=>document.querySelector('#try-status').textContent==='Chargement de la monture…');
  await page.locator('#close-try').click();await page.waitForFunction(()=>document.querySelector('#video').srcObject===null);
- slowModel=false;await open();await page.locator('#start-camera').click();
+ slowModel=false;await open();
  await page.waitForFunction(()=>document.querySelector('#try-status').textContent.startsWith('Visage détecté'),{},{timeout:60000});
  assert.ok(await page.locator('#snapshot').isEnabled());assert.ok(modelRequests>=2);
  assert.deepEqual(errors,[]);

@@ -1,13 +1,69 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Lunette Caba — L’essayage autrement</title><link rel="icon" href="/assets/lunette-caba-logo.png"><link rel="stylesheet" href="/style.css"><script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script><script type="module" src="/app.js"></script></head><body>
-<header><a class="logo" href="/" aria-label="Lunette Caba — Accueil"><span class="brand-mark"><img src="/assets/lunette-caba-logo.png" alt="" width="500" height="500"></span></a><nav><a href="#collection">La collection</a><a href="/admin.html" class="admin-link">Administration ↗</a></nav></header>
-<main><section class="hero"><div><p class="eyebrow">UN NOUVEAU REGARD SUR VOUS</p><h1>Le coup de cœur.<br><em>Avant l’essayage.</em></h1><p class="intro">Trouvez la monture qui vous ressemble.<br>Essayez nos lunettes en direct, où que vous soyez.</p><a class="button" href="#collection">Découvrir la collection <span>↗</span></a><div class="trust">◎ Sans inscription <span>·</span> Votre caméra reste privée</div></div><div class="hero-art"><div class="sun"></div><svg viewBox="0 0 600 300" aria-label="Illustration de lunettes solaires"><path d="M90 105 L25 65 M510 105 L575 65"/><path d="M65 110 Q150 65 255 110 L240 195 Q150 240 85 190 Z M345 110 Q450 65 535 110 L515 190 Q450 240 360 195 Z" class="lenses"/><path d="M255 120 Q300 95 345 120"/></svg><span class="art-label">LA PERSPECTIVE CHANGE.</span><span class="art-number">01 / ÉCLIPSE</span></div></section>
-<section id="collection"><div class="section-title"><div><p class="eyebrow">CHOISISSEZ VOTRE SIGNATURE</p><h2>La collection</h2></div><span id="count"></span></div><div id="products" class="grid"></div></section>
-<section class="note"><span>01 — Choisissez</span><span>02 — Activez votre caméra</span><span>03 — Découvrez votre style</span></section></main>
-<footer><span>LUNETTE CABA · Essayage virtuel</span><span>Votre image vous appartient. Toujours.</span></footer>
-<dialog id="try-dialog" aria-labelledby="try-name">
-<div class="dialog-head"><div><p class="eyebrow">ESSAYAGE VIRTUEL</p><h2 id="try-name"></h2></div><button id="close-try" class="icon" aria-label="Fermer">✕</button></div>
-<div class="try-layout"><div class="camera-panel">
-<div id="camera-stage"><canvas id="camera-backdrop" aria-hidden="true"></canvas><video id="video" autoplay muted playsinline></video><canvas id="overlay"></canvas><div id="camera-message">Activez la caméra pour découvrir votre monture.</div></div>
-<div class="camera-controls"><p id="try-status" role="status">Les images restent sur votre appareil.</p><div class="actions"><button id="start-camera" class="button">Activer la caméra</button><button id="snapshot" disabled>Prendre une photo</button></div><p class="small try-disclaimer">Aperçu esthétique · Ne garantit pas le bon ajustement ni les dimensions réelles.</p></div>
-</div><aside class="model-controls"><label for="model-select">Changer de monture</label><select id="model-select"></select><details id="try-info" open><summary>À propos de cet essai</summary><p class="small">Placez votre visage face à la caméra, dans un endroit bien éclairé.</p><p id="model-note" class="small">Le modèle de démonstration est une illustration, pas une reproduction de vos produits.</p></details></aside></div></dialog>
-</body></html>
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="Découvrez les solaires HEAD chez Lunette Caba. Trouvez votre monture et essayez-la en direct avec votre caméra.">
+  <meta name="theme-color" content="#14243c">
+  <title>Lunette Caba — Un autre regard sur votre style</title>
+  <link rel="icon" href="/assets/lunette-caba-logo.png">
+  <link rel="preload" href="/assets/fonts/manrope.woff" as="font" type="font/woff" crossorigin>
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body class="storefront">
+  <a class="skip-link" href="#collection">Aller à la collection</a>
+  <div class="announcement">LE STYLE SE VOIT. IL S’ESSAIE AUSSI.</div>
+  <header class="site-header">
+    <a class="logo" href="/" aria-label="Lunette Caba — Accueil">
+      <span class="brand-mark"><img src="/assets/lunette-caba-logo.png" alt="" width="500" height="500"></span>
+      <span class="wordmark">LUNETTE <b>CABA<span class="brand-dot">.</span></b></span>
+    </a>
+    <nav aria-label="Navigation principale"><a href="#collection">La collection</a><a href="#experience">L’essayage</a></nav>
+    <a class="header-cta" href="#collection">Trouver ma monture <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="live-dot" aria-hidden="true"></span> LES SOLAIRES, AUTREMENT</p>
+        <h1 id="hero-title">Du caractère.<br><span>À première vue.</span></h1>
+        <p class="intro">La bonne monture change le regard.<br>Découvrez la collection HEAD et essayez votre prochain coup de cœur, en direct.</p>
+        <a class="button hero-cta" href="#collection">Explorer la collection <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a>
+        <div class="hero-reassurance"><span class="reassurance-icon" aria-hidden="true">✓</span><span>Votre caméra suffit. Votre style fait le reste.</span></div>
+      </div>
+      <div class="hero-showcase">
+        <div class="showcase-top"><span>LE SENS DU DÉTAIL</span><span class="showcase-edition">LUNETTE CABA / HEAD</span></div>
+        <span class="showcase-watermark" aria-hidden="true">HEAD</span>
+        <img id="hero-photo" alt="" width="1300" height="1000" hidden fetchpriority="high">
+        <div class="showcase-bottom"><div><span class="eyebrow">UN NOUVEAU POINT DE VUE</span><p id="hero-product-name">Votre prochaine signature.</p></div><a class="round-link" href="#collection" aria-label="Découvrir les montures"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a></div>
+        <div class="camera-tag"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 1.5-2h5L16 5h4v15H4V5Z"/><circle cx="12" cy="12" r="4"/></svg><span>ESSAYAGE VIRTUEL<br><b>Votre miroir, où que vous soyez.</b></span></div>
+      </div>
+    </section>
+    <div class="benefit-strip" aria-label="Les avantages de l’essayage"><span><i aria-hidden="true">01</i> Un essai en direct</span><span><i aria-hidden="true">02</i> Sans inscription</span><span><i aria-hidden="true">03</i> Vos images restent privées</span></div>
+    <section id="collection" class="collection" aria-labelledby="collection-title">
+      <div class="section-title"><div><p class="eyebrow">DES MONTURES. DU CARACTÈRE.</p><h2 id="collection-title">Trouvez votre signature<span class="brand-dot">.</span></h2></div><span id="count" aria-live="polite"></span></div>
+      <div id="products" class="grid" aria-live="polite"></div>
+      <p class="collection-footnote">Une préférence ? Essayez-la sur votre visage, puis comparez les montures en un geste.</p>
+    </section>
+    <section id="experience" class="experience" aria-labelledby="experience-title">
+      <div class="experience-heading"><p class="eyebrow">L’ESSAYAGE, TOUT SIMPLEMENT</p><h2 id="experience-title">Vous. Votre caméra.<br>Le bon point de vue.</h2><p>Votre prochain regard se découvre en trois gestes.</p></div>
+      <div class="steps"><article><span class="step-number">01</span><h3>Repérez votre monture.</h3><p>Une forme, une couleur, une première impression. Laissez parler votre style.</p></article><article><span class="step-number">02</span><h3>Essayez-la en direct.</h3><p>Autorisez la caméra et découvrez la monture sur votre visage, en mouvement.</p></article><article><span class="step-number">03</span><h3>Trouvez votre évidence.</h3><p>Comparez les modèles sans quitter la caméra. Prenez une photo de votre préféré.</p></article></div>
+    </section>
+    <section class="privacy-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-6"/></svg><div><h3>Votre regard vous appartient.</h3><p>L’essayage se déroule sur votre appareil. Vos images caméra ne sont pas envoyées à notre serveur.</p></div></section>
+  </main>
+  <footer class="site-footer"><div class="footer-top"><a class="footer-brand" href="/">LUNETTE CABA<span>Un autre regard sur votre style.</span></a><nav aria-label="Navigation de pied de page"><a href="#collection">La collection</a><a href="#experience">Comment essayer</a><a href="/admin.html">Administration <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></a></nav></div><div class="footer-bottom"><span>© LUNETTE CABA</span><span>Votre style. Votre point de vue.</span></div></footer>
+  <dialog id="try-dialog" aria-labelledby="try-name">
+    <div class="dialog-head"><div class="try-title"><span class="live-dot" aria-hidden="true"></span><div><p id="try-brand" class="eyebrow">ESSAYAGE EN DIRECT</p><h2 id="try-name"></h2></div></div><button id="close-try" class="icon" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+    <div class="try-layout">
+      <div class="camera-panel"><div id="camera-stage"><canvas id="camera-backdrop" aria-hidden="true"></canvas><video id="video" autoplay muted playsinline></video><canvas id="overlay"></canvas><div id="camera-message">Autorisez la caméra pour découvrir votre monture.</div></div></div>
+      <div class="try-bottom">
+        <div class="camera-controls"><p id="try-status" role="status">Les images restent sur votre appareil.</p>
+          <div class="try-dock"><aside class="model-controls" aria-label="Montures disponibles"><div id="model-choices" class="model-choices" role="group" aria-label="Choisir une monture"></div></aside><div class="actions"><button id="start-camera" class="button" hidden>Réessayer</button><button id="snapshot" class="shutter" disabled aria-label="Prendre une photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 1.5-2h5L16 5h4v15H4V5Z"/><circle cx="12" cy="12" r="4"/></svg><span class="sr-only">Prendre une photo</span></button></div></div>
+          <details id="try-info"><summary>À propos de l’essayage</summary><div class="try-info-content"><label for="model-select">Changer de monture</label><select id="model-select"></select><p>Placez votre visage face à la caméra, dans un endroit bien éclairé.</p><p id="model-note">Aperçu du modèle fourni.</p><p class="try-disclaimer">Aperçu esthétique · Ne garantit pas le bon ajustement ni les dimensions réelles.</p></div></details>
+        </div>
+      </div>
+    </div>
+  </dialog>
+</body>
+</html>

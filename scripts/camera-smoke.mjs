@@ -9,6 +9,7 @@ try{
 await new Promise((resolve,reject)=>{child.stdout.once('data',resolve);child.once('exit',()=>reject(Error('Server failed')))});
 browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-fake-video-capture=${process.env.CAMERA_FIXTURE}`,'--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
 const page=await browser.newPage({permissions:['camera'],acceptDownloads:true,...(process.env.MOBILE_CAMERA?{viewport:{width:390,height:844},isMobile:true,hasTouch:true}:{})});const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&m.text()!=='INFO: Created TensorFlow Lite XNNPACK delegate for CPU.'){errors.push(m.text());console.error(m.text())}});
+await page.addInitScript(()=>{const original=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=(...args)=>{window.testCameraRequests=(window.testCameraRequests||0)+1;return original(...args);};});
 if(process.env.TRACKING_DROPOUTS){
   // A controlled clock keeps this test deterministic even when software WebGL
   // takes longer than the 220-ms grace period to render one frame.
@@ -67,10 +68,21 @@ if(process.env.FRAME_SYNC){
   });
 }
 await page.getByRole('button',{name:'Essayer sur mon visage'}).first().click();
-if(process.env.TRYON_PRODUCT_ID)await page.locator('#model-select').selectOption(process.env.TRYON_PRODUCT_ID);
-if(!process.env.MOBILE_CAMERA)await page.getByRole('button',{name:'Activer la caméra'}).click();
+if(process.env.TRYON_PRODUCT_ID)await page.locator('#model-select').selectOption(process.env.TRYON_PRODUCT_ID,{force:true});
+
 try{await page.waitForFunction(()=>document.querySelector('#try-status').textContent.startsWith('Visage détecté'),{},{timeout:60000})}catch(e){throw Error('Camera status: '+await page.locator('#try-status').textContent(),{cause:e})}
 assert.equal(await page.locator('#snapshot').isEnabled(),true);
+assert.equal(await page.evaluate(()=>window.testCameraRequests),1,'opening try-on starts the camera once without another activation button');
+assert.ok(await page.locator('#start-camera').isHidden());
+if(process.env.MODEL_SWITCH){
+  const alternative=await page.locator('#model-select').evaluate(select=>[...select.options].find(o=>o.value!==select.value)?.value);
+  assert.ok(alternative,'model switching requires two real GLB products');
+  await page.locator(`.model-choice[data-model-id="${alternative}"]`).click();
+  await page.waitForFunction(()=>!document.querySelector('#snapshot').disabled&&document.querySelector('#try-status').textContent.startsWith('Visage détecté'),{},{timeout:60000});
+  assert.equal(await page.locator('#model-select').inputValue(),alternative);
+  assert.equal(await page.locator(`.model-choice[data-model-id="${alternative}"]`).getAttribute('aria-pressed'),'true');
+  assert.equal(await page.evaluate(()=>window.testCameraRequests),1,'thumbnail switching reuses the active camera');
+}
 const downloadPromise=page.waitForEvent('download');await page.locator('#snapshot').click();const download=await downloadPromise;assert.equal(download.suggestedFilename(),'mon-essayage.png');await download.saveAs(process.env.CAMERA_SNAPSHOT||'/tmp/atelier-camera-snapshot.png');
 await page.screenshot({path:'/tmp/atelier-camera-ui.png'});
 if(process.env.TRACKING_DROPOUTS){
