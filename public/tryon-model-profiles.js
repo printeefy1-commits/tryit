@@ -3,19 +3,15 @@
 const profiles=new Map([
   ['20e5d272e646a7e33256a040568273de767d5d3d3cba2e8fe8c654382bbd7055',{
     label:'HEAD 12029',
-    measurements:{reportedSpanMm:110,endpoints:'owner-described bridge-to-bridge span; exterior width not established',calibrated:false},
-    templeFit:{firstLiftCm:.55,rearLiftCm:.8,splayCm:1,extensionCm:1.5}
+    measurements:{reportedSpanMm:110,endpoints:'owner-described bridge-to-bridge span; exterior width not established',calibrated:false}
   }],
   ['a013cbe08e711629e2a47a62560ca87b625dca8a0f20bdd4c6eae92f67c51514',{
     label:'HEAD 12028',
     measurements:{calibrated:false},
-    frameDoubleSided:true,
-    // This mesh already has longer, higher arms than the model-v1 source.
-    templeFit:{firstLiftCm:.4,rearLiftCm:.65,splayCm:.9,extensionCm:.5}
+    frameDoubleSided:true
   }],
   ['046f50c9b51e6d12d0956db2d60a4b0566c6d0455e5f2a374d8af939b198e0bf',{
-    label:'HEAD 12028',measurements:{calibrated:false},authoredMaterials:true,
-    templeFit:{firstLiftCm:.4,rearLiftCm:.65,splayCm:.9,extensionCm:.5}
+    label:'HEAD 12028',measurements:{calibrated:false},authoredMaterials:true
   }]
 ]);
 

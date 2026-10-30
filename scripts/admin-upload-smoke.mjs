@@ -54,6 +54,7 @@ try{
   const diagnostics=await shop.evaluate(()=>window.tryonDiagnostics());
   assert.equal(diagnostics.sourceSha256,product.sourceSha256);
   assert.equal(diagnostics.fitting.templeFit?.method,'geometry','a new optimized admin upload must activate temple deformation, not just display');
+  assert.equal(diagnostics.fitting.templeFit.adjustment,'hinge-rotation');assert.equal(diagnostics.fitting.templeFit.lengthScale,1);
   assert.ok(diagnostics.fitting.templeFit.movedVertices>1000&&diagnostics.templeGroups>=2,'ear clipping must be active on the uploaded mesh');
   assert.equal(await shop.locator(`.model-choice[data-model-id="${product.id}"]`).getAttribute('aria-pressed'),'true');await shop.screenshot({path:'/tmp/tryit-admin-upload-camera.png'});
   await shop.getByRole('button',{name:'Fermer',exact:true}).click();assert.ok(requestedModels.includes(product.model));assert.ok(!requestedModels.includes(product.modelOriginal));assert.deepEqual(errors,[]);

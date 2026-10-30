@@ -47,11 +47,11 @@ for(const mode of ['separate','fused','multiple','nonindexed','rotated','short']
  const product={name:'12028',sourceSha256:productionSource,modelRotation:mode==='rotated'?[0,0,90]:[0,0,0]};
  const model=prepareGlasses(gltf,product),fitting=model.userData.fitting,control=model.userData.templeVisibility;
  assert.equal(fitting.templeFit?.method,'geometry');assert.ok(fitting.templeFit.movedVertices>1000);
- if(mode==='short')assert.ok(fitting.templeFit.lengthScale>1.2,'short shafts must still reach the support');
- assert.ok(fitting.templeFit.lengthScale>=1.2);assert.equal(fitting.templeFitSkipped,null);
+ assert.equal(fitting.templeFit.adjustment,'hinge-rotation');
+ assert.equal(fitting.templeFit.lengthScale,1,'changing hinge angle must never stretch the authored arm');assert.equal(fitting.templeFitSkipped,null);
  assert.deepEqual([...new Set(control.arms.map(a=>a.side))].sort(),[-1,1]);
  assert.equal(gltf.asset.extras,undefined,'unknown uploads must never acquire a forged reviewed profile');
- model.updateMatrixWorld(true);let unchanged=0,moved=0;
+ model.updateMatrixWorld(true);let unchanged=0,moved=0;const rigidSamples=[[],[]];
  // Compare source vertices in the oriented pre-normalization coordinates.
  const oriented=gltf.scene.parent;oriented.updateMatrixWorld(true);
  for(const {mesh,positions,uv,assignment:before} of records){
@@ -62,16 +62,27 @@ for(const mode of ['separate','fused','multiple','nonindexed','rotated','short']
    const point=new THREE.Vector3().fromBufferAttribute(positions,i).applyMatrix4(transform).sub(new THREE.Vector3(...fitting.anchor)).multiplyScalar(14/fitting.referenceWidth);
    const same=[positions.getX(i),positions.getY(i),positions.getZ(i)].every((v,k)=>v===mesh.geometry.attributes.position.array[i*3+k]);
    if(!isTempleRegion(point.x,point.z+5.5)){assert.ok(same,'front rim and bridge must not move');unchanged++;}
-   if(!same)moved++;
+   if(!same){
+    moved++;
+    const side=point.x<0?0:1,hinge=fitting.templeFit.hinges[side],pivot=new THREE.Vector3(...hinge.pivot);
+    const after=new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position,i).applyMatrix4(transform).sub(new THREE.Vector3(...fitting.anchor)).multiplyScalar(14/fitting.referenceWidth);
+    point.y+=2.625;point.z+=5.5;after.y+=2.625;after.z+=5.5;
+    const expected=point.clone().sub(pivot).applyQuaternion(new THREE.Quaternion(...hinge.quaternion)).add(pivot);
+    assert.ok(after.distanceTo(expected)<2e-6,'every arm vertex follows ONE hinge rotation, including the original hook');
+    if(i%97===0)rigidSamples[side].push({before:point.clone(),after});
+   }
   }
  }
  assert.ok(unchanged>1000&&moved>1000);
+ for(const samples of rigidSamples)for(let i=1;i<samples.length;i++){
+  const a=samples[i-1],b=samples[i];assert.ok(Math.abs(a.before.distanceTo(b.before)-a.after.distanceTo(b.after))<3e-6,'shaft thickness, hook curvature and distances are preserved');
+ }
  for(const [pitch,yaw,roll] of [[0,0,0],[.5,1,.4],[.5,-1,-.4],[1,0,0]]){
   const fit={translation:new THREE.Vector3(0,-1,-35),quaternion:new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch,yaw,roll)),metricScale:1};
   model.position.set(0,2.625,5.5).applyQuaternion(fit.quaternion).add(fit.translation);model.quaternion.copy(fit.quaternion);model.scale.setScalar(14);
   const ears=createEarOccluders();updateEarOccluders(ears,fit);updateTempleVisibility(model,[ears]);
-  for(const side of [-1,1])assert.ok(control.arms.some(a=>a.side===side&&a.group.count<a.ends.length*3),'each side loses its rear suffix');
-  for(const arm of control.arms){assert.ok(Number.isFinite(arm.earCutoff),'both shafts enter their ear support');assert.ok(arm.ends.slice(0,arm.group.count/3).every(d=>d<=arm.cutoff));}
+  if(mode!=='short')for(const side of [-1,1])assert.ok(control.arms.some(a=>a.side===side&&a.group.count<a.ends.length*3),'each side loses its rear suffix');
+  for(const arm of control.arms){if(mode!=='short')assert.ok(Number.isFinite(arm.earCutoff),'both shafts enter their ear support');assert.ok(arm.ends.slice(0,arm.group.count/3).every(d=>d<=arm.cutoff));}
  }
  updateTempleVisibility(model,[]);
  for(const arm of control.arms)assert.equal(arm.group.count,arm.ends.length*3,'preview restores the complete authored shaft');

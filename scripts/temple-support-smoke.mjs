@@ -62,7 +62,7 @@ try{
  const output=process.env.SUPPORT_PREVIEW_DIR||'/tmp/tryit-temple-support';await fs.mkdir(output,{recursive:true});
  for(const [index,product] of result.entries())for(const view of product.views){
   for(const arm of view.ends){assert.ok(Number.isFinite(arm.earCutoff),'rear hook must have an anatomical end at the ear');assert.ok(arm.cutoff<=arm.earCutoff+1e-6);assert.ok(arm.maxVisibleDistance<=arm.cutoff+1e-6,'no isolated triangle may survive behind the ear');}
-  if(['right','left','right-down','left-down'].includes(view.name)){const near=view.ends.find(arm=>arm.side===view.near);assert.ok(near.visible>100&&near.cutoff>10,'near shaft must remain connected as far as the upper ear');}
+  if(['right','left','right-down','left-down'].includes(view.name)){const near=view.ends.find(arm=>arm.side===view.near);assert.ok(near.visible>100&&near.cutoff>10,'near shaft must remain connected as far as the upper ear: '+JSON.stringify({url:product.url,view:view.name,near}));}
   await fs.writeFile(`${output}/${index}-${view.name}.png`,Buffer.from(view.png.split(',')[1],'base64'));delete view.png;
  }
  assert.deepEqual(errors,[]);console.log(JSON.stringify({output,products:result},null,2));

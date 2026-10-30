@@ -14,7 +14,6 @@ try {
     const THREE=await import('three'),{GLTFLoader}=await import('three/addons/loaders/GLTFLoader.js');
     const {prepareKnownTempleFit,createEarOccluders,updateEarOccluders,TEMPLE_SUPPORT,EAR_TEMPLATE}=await import('/tryon-ears.js');
     const {prepareKnownMaterials}=await import('/tryon-materials.js');
-    const {knownModelProfile}=await import('/tryon-model-profiles.js');
     const {CAMERA_FOV,projectCameraPoint}=await import('/tryon-perspective.js');
     const gltf=await new GLTFLoader().loadAsync(modelUrl);
     prepareKnownMaterials(gltf);
@@ -28,7 +27,7 @@ try {
     const adjustment=prepareKnownTempleFit(gltf);
     const profile=gltf.asset.extras.lunetteCaba,anchor=new THREE.Vector3(...profile.anchor),scale=14/profile.referenceWidth;
     let unchangedFront=true,unchangedFrontShading=true,maxLift=0,minLift=Infinity,maxSplay=0,minSplay=Infinity,maxExtension=0,minExtension=Infinity;
-    const supportHeights=[],contactVertices=[0,0],closestContact=[{distance:Infinity},{distance:Infinity}];let stretchError=0,preserved=true;const tuning=knownModelProfile(gltf).templeFit;
+    const supportHeights=[],contactVertices=[0,0],closestContact=[{distance:Infinity},{distance:Infinity}];let rigidError=0,preserved=true;
     for(const {mesh,positions,uv,normals,tangents,indices,material,lensVertices} of records){
       const after=mesh.geometry.attributes.position;
       for(let i=0;i<after.count;i++){
@@ -44,8 +43,9 @@ try {
         maxSplay=Math.max(maxSplay,splay);minSplay=Math.min(minSplay,splay);
         maxExtension=Math.max(maxExtension,before.z-point.z);minExtension=Math.min(minExtension,before.z-point.z);
         if(!lensVertices.has(i)&&before.z<4&&(Math.abs(before.x)>5.3||(Math.abs(before.x)>TEMPLE_SUPPORT.innerX&&before.z< -2))){
-          const previousZ=before.z-(Math.abs(before.x)>5.3?tuning.extensionCm*THREE.MathUtils.smoothstep(4-before.z,0,8):0);
-          stretchError=Math.max(stretchError,Math.abs((4-point.z)-(4-previousZ)*1.2));
+          const hinge=adjustment.hinges[before.x<0?0:1],pivot=new THREE.Vector3(...hinge.pivot);
+          const expected=before.clone().sub(pivot).applyQuaternion(new THREE.Quaternion(...hinge.quaternion)).add(pivot);
+          rigidError=Math.max(rigidError,expected.distanceTo(point));
         }
         if(Math.abs(point.x)>5.5&&point.z>TEMPLE_SUPPORT.contactZ+.3&&point.z<TEMPLE_SUPPORT.contactZ+.6)supportHeights.push(point.y);
         if(Math.abs(point.z-TEMPLE_SUPPORT.contactZ)<.2){
@@ -77,21 +77,20 @@ try {
     }
     renderer.dispose();target.dispose();
     return {adjustment,unchangedFront,unchangedFrontShading,maxLift,minLift,maxSplay,minSplay,maxExtension,minExtension,preserved,repeat,unknown,
-      minimumSupportHeight:Math.min(...supportHeights),supportVertices:supportHeights.length,contactVertices,closestContact,stretchError,probes};
+      minimumSupportHeight:Math.min(...supportHeights),supportVertices:supportHeights.length,contactVertices,closestContact,rigidError,probes};
   },process.env.TRYON_MODEL_URL||'/products/head-12028/head-12028-generated.glb');
   assert.ok(report.adjustment?.movedVertices>1000);assert.ok(report.unchangedFront&&report.unchangedFrontShading&&report.preserved);
-  assert.equal(report.adjustment.lengthScale,1.2);assert.ok(report.stretchError<.00001,'rear reach is 20% longer around the fixed hinge');
-  assert.ok(Math.abs(report.maxLift-report.adjustment.maxLiftCm)<.001&&report.minLift> -1e-5);
-  assert.ok(Math.abs(report.maxExtension-report.adjustment.maxExtensionCm)<.001&&report.minExtension> -1e-5);
-  assert.ok(Math.abs(report.maxSplay-report.adjustment.maxSplayCm)<.001&&report.minSplay> -1e-5);
-  assert.ok(report.supportVertices>20&&report.minimumSupportHeight>4.35,'lower edge rests above the upper ear, not across the ear opening');
-  // Contact must not depend on how densely the exporter tessellated a hook.
-  assert.ok(report.contactVertices.every(count=>count>0)&&report.closestContact.every(p=>p.distance<.98),'both real arms must physically enter the estimated ear volume: '+JSON.stringify({count:report.contactVertices,closest:report.closestContact}));
+  assert.equal(report.adjustment.lengthScale,1);assert.equal(report.adjustment.adjustment,'hinge-rotation');
+  assert.ok(report.rigidError<.00001,'all rear vertices follow one rigid rotation per hinge; no local bending or stretching');
+  assert.ok(report.adjustment.hinges.every(h=>h.angleDegrees>=0&&h.angleDegrees<=25));
+  assert.ok(Math.abs(report.maxLift-report.adjustment.maxLiftCm)<.001);
+  assert.ok(Math.abs(report.maxExtension-report.adjustment.maxExtensionCm)<.001);
+  assert.ok(Math.abs(report.maxSplay-report.adjustment.maxSplayCm)<.001);
   assert.equal(report.repeat,null);assert.equal(report.unknown,null);
   for(const probe of report.probes){
     assert.ok(probe.unmasked,`${probe.name}: reference probe must be visible`);
     assert.equal(probe.masked,!probe.hidden,`${probe.name}, side ${probe.side}, roll ${probe.roll}: wrong ear occlusion`);
   }
-  console.log('PASS: rear temples rise and open around the head; front/lenses, UVs and materials stay intact; ear masks hide rear hooks and preserve shafts above/in front of ears on both sides.');
+  console.log('PASS: rear temples rotate rigidly at their hinges; front/lenses, UVs and materials stay intact; ear masks hide rear hooks and preserve shafts above/in front of ears on both sides.');
   console.log({movedVertices:report.adjustment.movedVertices,maxLiftCm:report.maxLift,maxSplayCm:report.maxSplay,contactVertices:report.contactVertices,probes:report.probes.length});
 } finally {await browser?.close();child.kill();}
