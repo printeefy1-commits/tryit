@@ -30,7 +30,12 @@ if ((await read()).some(p=>p.id==='demo'&&p.demo===true)) {
   await mutate(items=>{const i=items.findIndex(p=>p.id==='demo'&&p.demo===true);if(i>=0)items.splice(i,1)});
 }
 app.disable('x-powered-by'); if(prod)app.set('trust proxy',1);
-app.use(helmet({contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'","'wasm-unsafe-eval'","'sha256-"+crypto.createHash('sha256').update('{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}').digest('base64')+"'"],styleSrc:["'self'"],imgSrc:["'self'","data:","blob:"],connectSrc:["'self'","blob:"],workerSrc:["'self'","blob:"],upgradeInsecureRequests:prod?[]:null}}}));
+app.use((req,res,next)=>{
+ res.setHeader('Permissions-Policy','camera=(self), microphone=(), geolocation=()');
+ if(req.path==='/admin.html'||req.path==='/api'||req.path.startsWith('/api/'))res.setHeader('Cache-Control','no-store');
+ next();
+});
+app.use(helmet({frameguard:{action:'deny'},contentSecurityPolicy:{directives:{frameAncestors:["'none'"],defaultSrc:["'self'"],scriptSrc:["'self'","'wasm-unsafe-eval'","'sha256-"+crypto.createHash('sha256').update('{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}').digest('base64')+"'"],styleSrc:["'self'"],imgSrc:["'self'","data:","blob:"],connectSrc:["'self'","blob:"],workerSrc:["'self'","blob:"],upgradeInsecureRequests:prod?[]:null}}}));
 app.use(express.json({limit:'32kb'}));
 // Sessions expire eight hours after login. Avoid background touch writes that
 // could recreate a deleted session when a request overlaps logout.

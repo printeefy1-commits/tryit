@@ -7,6 +7,17 @@ import {uploadModelFixture} from '../scripts/upload-model-fixture.mjs';
 let child,cookie;const base='http://127.0.0.1:3187',password=crypto.randomBytes(20).toString('hex');
 before(async()=>{child=spawn(process.execPath,['server.js'],{env:{...process.env,PORT:'3187',ADMIN_PASSWORD:password},stdio:'pipe'});await new Promise((resolve,reject)=>{child.stdout.once('data',resolve);child.once('exit',()=>reject(Error('Server failed')));setTimeout(()=>reject(Error('Startup timeout')),8000).unref()})});
 after(()=>child?.kill());
+test('security headers prevent framing and caching of administration and session responses',async()=>{
+ for(const resource of ['/','/admin.html','/api/session','/api/admin/products']){
+  const response=await fetch(base+resource);
+  assert.equal(response.headers.get('x-frame-options'),'DENY');
+  assert.match(response.headers.get('content-security-policy'),/frame-ancestors 'none'/);
+  assert.equal(response.headers.get('permissions-policy'),'camera=(self), microphone=(), geolocation=()');
+  if(resource!=='/')assert.equal(response.headers.get('cache-control'),'no-store');
+  await response.body.cancel();
+ }
+});
+
 test('public catalogue, protected writes, login, upload, visibility, edit and delete',async()=>{
  assert.equal((await fetch(base)).status,200);
  let r=await fetch(base+'/api/products');const catalogue=await r.json();assert.ok(Array.isArray(catalogue));assert.ok(!catalogue.some(p=>p.id==='demo'&&p.demo),'retired demo is absent from the catalogue');
