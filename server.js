@@ -1,5 +1,6 @@
 import express from 'express';
 import helmet from 'helmet';
+import {createProductImages} from './product-image-variants.js';
 import session from 'express-session';
 import FileStoreFactory from 'session-file-store';
 import {rateLimit} from 'express-rate-limit';
@@ -13,11 +14,13 @@ import {prepareModelUpload} from './model-upload.js';
 import {OPTIMIZATION_VERSION} from './model-optimizer.js';
 import {MODEL_MAX_BYTES,PHOTO_MAX_COUNT} from './public/upload-config.js';
 import {parsePhotoOrder,planPhotos} from './product-gallery.js';
+import {createStaticAssets} from './static-assets.js';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const app=express(); const prod=process.env.NODE_ENV==='production';
 if(!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length<12) throw Error('Set ADMIN_PASSWORD (at least 12 characters).');
 if(prod && (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length<32)) throw Error('Set SESSION_SECRET (at least 32 characters).');
 await fs.mkdir(path.join(root,'data'),{recursive:true}); await fs.mkdir(path.join(root,'uploads'),{recursive:true});
+const staticAssets=await createStaticAssets({root});
 const incoming=path.join(root,'data/incoming');await fs.mkdir(incoming,{recursive:true,mode:0o700});
 const db=path.join(root,'data/catalog.json');
 try{await fs.access(db)}catch{await fs.writeFile(db,JSON.stringify([]))}
@@ -35,7 +38,7 @@ app.use((req,res,next)=>{
  if(req.path==='/admin.html'||req.path==='/api'||req.path.startsWith('/api/'))res.setHeader('Cache-Control','no-store');
  next();
 });
-app.use(helmet({frameguard:{action:'deny'},contentSecurityPolicy:{directives:{frameAncestors:["'none'"],defaultSrc:["'self'"],scriptSrc:["'self'","'wasm-unsafe-eval'","'sha256-"+crypto.createHash('sha256').update('{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}').digest('base64')+"'"],styleSrc:["'self'"],imgSrc:["'self'","data:","blob:"],connectSrc:["'self'","blob:"],workerSrc:["'self'","blob:"],upgradeInsecureRequests:prod?[]:null}}}));
+app.use(helmet({frameguard:{action:'deny'},contentSecurityPolicy:{directives:{frameAncestors:["'none'"],defaultSrc:["'self'"],scriptSrc:["'self'","'wasm-unsafe-eval'",staticAssets.importMapHash],styleSrc:["'self'"],imgSrc:["'self'","data:","blob:"],connectSrc:["'self'","blob:"],workerSrc:["'self'","blob:"],upgradeInsecureRequests:prod?[]:null}}}));
 app.use(express.json({limit:'32kb'}));
 // Sessions expire eight hours after login. Avoid background touch writes that
 // could recreate a deleted session when a request overlaps logout.
@@ -167,7 +170,10 @@ app.use('/uploads/:file',async(req,res,next)=>{
   res.sendFile(encoded,{maxAge:'1y',immutable:true},error=>{if(error)next(error);});
  }catch{next();}
 });
+app.use('/product-images',createProductImages(root).middleware);
 app.use('/uploads',express.static(path.join(root,'uploads'),{maxAge:'1y',immutable:true,setHeaders:res=>res.setHeader('X-Content-Type-Options','nosniff')}));
+app.use(staticAssets.htmlMiddleware);
+app.use(staticAssets.middleware);
 app.use('/vendor/three',express.static(path.join(root,'node_modules/three')));
 app.use('/vendor/vision',express.static(path.join(root,'node_modules/@mediapipe/tasks-vision')));
 app.use(express.static(path.join(root,'public')));
