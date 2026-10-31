@@ -14,6 +14,10 @@ npm start
 
 Port par défaut : 3000. `/admin.html` : administration avec ajout direct de photos (JPG/PNG/WebP/HEIC, jusqu’à 10 photos de 10 MiB chacune) et de GLB autonomes (100 MiB), aperçu 3D, progression d’envoi et optimisation automatique du GLB (original conservé). [Qualité, migration des modèles existants et déploiement (arabe)](docs/model-optimization-ar.md). [Utilisation et mise à jour unique du serveur (arabe)](docs/admin-uploads-ar.md). `npm test` : intégration API (authentification, protection des écritures, visibilité et cycle CRUD). Le modèle de suivi du visage est téléchargé depuis le dépôt officiel Google ; autoriser `storage.googleapis.com` si nécessaire. Les fichiers WASM, le modèle et les bibliothèques sont ensuite servis localement : aucune image caméra n’est transmise au serveur.
 
+## Performance
+
+Le magasin charge le moteur 3D à la demande, avec permission caméra demandée dans le clic initial. Les fichiers statiques sont compressés sans perte et servis sous des URL versionnées ; les photos existantes et nouvelles disposent de dérivés adaptés aux cartes et miniatures. Voir [mesures avant/après, vérification et déploiement (arabe)](docs/performance-ar.md). `CAMERA_FIXTURE=/chemin/visage.y4m npm run test:performance` vérifie le budget de chargement et le cycle caméra différé.
+
 ## Produits et 3D
 
 Le modèle de démonstration Éclipse 01 a été retiré à la demande du propriétaire. Le démarrage du serveur retire uniquement son entrée initiale (`id: demo`, `demo: true`) et initialise un nouveau catalogue vide. Les produits réels et leurs fichiers restent conservés. Ajouter les photos et fichiers **GLB autonomes** via l’administration ; sans GLB, un produit n’a pas d’essayage. Axes : X largeur, Y haut, +Z avant, modèle centré. Ajuster échelle et hauteur dans l’administration puis contrôler sur le site. Les matériaux transparents, l’occlusion par le visage et le calibrage physique restent des limites du prototype : aucun ajustement réel n’est garanti.

@@ -63,38 +63,65 @@ export function prepareTempleVisibility(gltf) {
   return control;
 }
 
+// Weak maps let disposed models/masks be collected. Rigid masks retain their
+// local bounds across poses; mutable face masks invalidate through their
+// BufferAttribute version (including interleaved attributes) or a cleared bound.
+const maskBounds=new WeakMap(),frameScratch=new WeakMap();
+function updateMaskBounds(geometry){
+  const position=geometry.attributes.position,index=geometry.index;
+  const positionVersion=position?.isInterleavedBufferAttribute?position.data.version:position?.version;
+  const cached=maskBounds.get(geometry);
+  if(!geometry.boundingSphere||!cached||cached.position!==position||cached.positionVersion!==positionVersion
+    ||cached.index!==index||cached.indexVersion!==index?.version){
+    geometry.computeBoundingSphere();
+    maskBounds.set(geometry,{position,positionVersion,index,indexVersion:index?.version});
+  }
+}
+function scratchFor(control){
+  let scratch=frameScratch.get(control);
+  if(!scratch){
+    scratch={ray:new THREE.Raycaster(),point:new THREE.Vector3(),direction:new THREE.Vector3(),origin:new THREE.Vector3(),
+      local:new THREE.Vector3(),previous:new THREE.Vector3(),contact:new THREE.Vector3(),inverseEar:new THREE.Matrix4(),hits:[]};
+    frameScratch.set(control,scratch);
+  }
+  return scratch;
+}
+
 export function updateTempleVisibility(model,occluders) {
   const control=model.userData.templeVisibility;if(!control)return;
-  model.updateMatrixWorld(true);
-  for(const o of occluders){o.updateMatrixWorld(true);o.traverse(n=>{if(n.isMesh)n.geometry.computeBoundingSphere();});}
-  const ray=new THREE.Raycaster(),point=new THREE.Vector3();
+  // localToWorld would update the same world matrix for every centreline
+  // sample. Resolve ancestors once, then use the frozen frame's matrices.
+  model.updateWorldMatrix(true,true);
+  for(const o of occluders){o.updateWorldMatrix(true,true);o.traverse(n=>{if(n.isMesh)updateMaskBounds(n.geometry);});}
+  const {ray,point,direction,origin,local,previous,contact,inverseEar,hits}=scratchFor(control);
   const ears=occluders.find(o=>o.visible&&o.userData.templeSupport),support=ears?.userData.templeSupport;
-  const inverseEar=ears?.matrixWorld.clone().invert();
+  if(ears)inverseEar.copy(ears.matrixWorld).invert();
   for(const arm of control.arms){
     arm.cutoff=Infinity;arm.earCutoff=Infinity;
     if(support){
       // Use the same head-space ear as the depth mask. This handles user scale,
       // measured frame width, translation, yaw, nods and roll together; a fixed
       // GLB-space length would miss the ear when any of those settings change.
-      let previous;
+      let hasPrevious=false,previousDistance=0;
       for(const sample of arm.samples){
-        const local=model.localToWorld(sample.point.clone()).applyMatrix4(inverseEar);
-        if(previous&&previous.local.z>support.z&&local.z<=support.z){
-          const t=(previous.local.z-support.z)/(previous.local.z-local.z);
-          const contact=previous.local.clone().lerp(local,t);
+        local.copy(sample.point).applyMatrix4(model.matrixWorld).applyMatrix4(inverseEar);
+        if(hasPrevious&&previous.z>support.z&&local.z<=support.z){
+          const t=(previous.z-support.z)/(previous.z-local.z);
+          contact.copy(previous).lerp(local,t);
           if(contact.x*arm.side>0&&Math.abs(Math.abs(contact.x)-support.x)<=support.radiusX&&contact.y>=support.minY&&contact.y<=support.maxY){
-            arm.earCutoff=THREE.MathUtils.lerp(previous.distance,sample.distance,t);arm.cutoff=arm.earCutoff;
+            arm.earCutoff=THREE.MathUtils.lerp(previousDistance,sample.distance,t);arm.cutoff=arm.earCutoff;
           }
           break;
         }
-        previous={local,distance:sample.distance};
+        previous.copy(local);previousDistance=sample.distance;hasPrevious=true;
       }
     }
     for(const sample of arm.samples){
       if(sample.distance>arm.cutoff)break;
-      point.copy(sample.point);model.localToWorld(point);
-      const distance=point.length();ray.set(new THREE.Vector3(),point.clone().divideScalar(distance));ray.far=distance-.06;
-      if(ray.intersectObjects(occluders,true).length){arm.cutoff=Math.min(arm.cutoff,Math.max(0,sample.distance-.15));break;}
+      point.copy(sample.point).applyMatrix4(model.matrixWorld);
+      const distance=point.length();ray.set(origin,direction.copy(point).divideScalar(distance));ray.far=distance-.06;
+      const obstructed=ray.intersectObjects(occluders,true,hits).length>0;hits.length=0;
+      if(obstructed){arm.cutoff=Math.min(arm.cutoff,Math.max(0,sample.distance-.15));break;}
     }
     let low=0,high=arm.ends.length;
     while(low<high){const middle=(low+high)>>>1;if(arm.ends[middle]<=arm.cutoff)low=middle+1;else high=middle;}

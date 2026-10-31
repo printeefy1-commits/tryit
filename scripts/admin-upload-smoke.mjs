@@ -54,7 +54,7 @@ try{
   const shop=await context.newPage(),requestedModels=[];shop.on('request',r=>{if(r.url().endsWith('.glb'))requestedModels.push(new URL(r.url()).pathname);});shop.on('pageerror',e=>errors.push(e.message));await shop.goto('http://127.0.0.1:3206');
   const card=shop.locator('.product').filter({has:shop.getByRole('heading',{name,exact:true})});await card.locator('.product-art>img').evaluate(img=>img.decode());
   assert.equal(await card.locator('.product-photo-choices button').count(),2);
-  await card.locator('.product-photo-choices button').nth(1).click();await card.locator('.product-art>img').evaluate(img=>img.decode());assert.equal(await card.locator('.product-art>img').getAttribute('src'),product.images[1]);
+  await card.locator('.product-photo-choices button').nth(1).click();await card.locator('.product-art>img').evaluate(img=>img.decode());assert.equal(new URL(await card.locator('.product-art>img').getAttribute('src'),'http://localhost').searchParams.get('src'),product.images[1]);
   await card.getByRole('button',{name:'Essayer sur mon visage'}).click();
   await shop.waitForFunction(()=>document.querySelector('#try-status').textContent.startsWith('Visage détecté'),{},{timeout:120000});assert.ok(await shop.locator('#snapshot').isEnabled());assert.equal(await shop.evaluate(()=>window.cameraRequests),1);
   const diagnostics=await shop.evaluate(()=>window.tryonDiagnostics());

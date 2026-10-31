@@ -37,7 +37,7 @@ if(process.env.TRACKING_DROPOUTS||process.env.FRAME_SYNC){
   });
 }
 if(process.env.FRAME_SYNC||process.env.TRACKING_DROPOUTS){
-  await page.route('**/app.js',async route=>{
+  await page.route('**/tryon.js',async route=>{
     const response=await route.fetch(),source=await response.text();
     let body=source;
     if(process.env.TRACKING_DROPOUTS)body=body.replace('renderer.render(scene, camera)',`(()=>{

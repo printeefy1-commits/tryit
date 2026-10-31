@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
-    "test:browser": "node scripts/browser-smoke.mjs"
+    "test:browser": "node scripts/browser-smoke.mjs",
+    "test:performance": "node scripts/performance-smoke.mjs"
   },
   "dependencies": {
     "@gltf-transform/core": "4.5.1",
